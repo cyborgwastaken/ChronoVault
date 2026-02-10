@@ -291,6 +291,15 @@
             color: var(--success);
         }
 
+        /* Footer */
+        .footer {
+            grid-column: span 12;
+            padding: 4rem 2rem;
+            border-top: var(--glass-border);
+            display: flex;
+            justify-content: space-between;
+        }
+
         @media (max-width: 900px) {
             .hero-title { grid-column: span 12; border-right: none; border-bottom: var(--glass-border); }
             .hero-instruction { grid-column: span 12; }
@@ -550,5 +559,16 @@
             }
         });
     </script>
+    <footer class="footer">
+        <div>
+            <p style="font-weight: 700; color: #fff;">CHRONOVAULT INC. © 2026</p>
+            
+            <p style="font-size: 0.8rem; margin-top: 0.5rem; white-space: nowrap;">Decentralized Network </p>
+            <p style="font-size: 0.8rem; margin-top: 0.5rem; white-space: nowrap;">By Ayushman, Aarushi, Nakshatra, Vishal, Shreena, Vipransh</p>
+        </div>
+        <div style="text-align: right;">
+            <p style="font-size: 0.8rem;">© 2026</p>
+        </div>
+    </footer>
 </body>
 </html>
