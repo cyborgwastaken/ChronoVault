@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ChronoVault - Retrieve</title>
+    <title>RETRIEVE & DECRYPT</title>
+    <link rel="icon" type="image/png" href="/images/WCVault.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700;900&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -61,6 +62,13 @@
 
         a { text-decoration: none; color: inherit; }
 
+        .zone-icon img {
+            width: 4em;   /* Adjust to match your font size */
+            height: 4em;
+            object-fit: contain;
+            vertical-align: middle; /* Keeps it aligned with adjacent text */
+        }
+
         /* Background */
         .bg-gradient {
             position: fixed;
@@ -111,6 +119,10 @@
             letter-spacing: -0.05em;
         }
 
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+        }
         .nav-links a {
             font-weight: 700;
             font-size: 0.9rem;
@@ -168,6 +180,7 @@
             transition: 0.3s;
             position: relative;
             border-radius: 4px;
+            gap: 0.7rem;
         }
 
         .drop-zone:hover, .drop-zone.dragover {
@@ -312,11 +325,11 @@
     <div class="bg-gradient"></div>
 
     <nav class="navbar">
-        <div class="nav-brand">
-            <a href="index.html">CHRONOVAULT®</a>
-        </div>
+        <div class="nav-brand">CHRONOVAULT®</div>
         <div class="nav-links">
-            <a href="index.html">Switch to Upload</a>
+            <a href="index.html">Home</a>
+            <a> | </a>
+            <a href="upload.html">Upload</a>
         </div>
     </nav>
 
@@ -338,7 +351,9 @@
         <div class="glass-panel fast-track">
             <div class="drop-zone" id="jsonZone">
                 <input type="file" id="jsonInput" accept=".json">
-                <div style="font-size: 3rem; margin-bottom: 1rem;">⚡</div>
+                <div class="zone-icon">
+                    <img src="images/upload.png" alt="Upload Icon">
+                </div>
                 <h3>Drag Artifacts JSON</h3>
                 <p>artifacts_filename.json</p>
                 <div id="jsonInfo" class="file-status"></div>

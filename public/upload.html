@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ChronoVault - Upload</title>
+    <title>Upload & Encrypt</title>
+    <link rel="icon" type="image/png" href="/images/WCVault.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700;900&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -110,6 +111,10 @@
             letter-spacing: -0.05em;
         }
 
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+        }
         .nav-links a {
             font-weight: 700;
             font-size: 0.9rem;
@@ -260,6 +265,14 @@
             animation: spin 1s linear infinite;
             margin: 1rem auto;
         }
+
+        .zone-icon img {
+            width: 1.2em;   /* Adjust to match your font size */
+            height: 1.2em;
+            object-fit: contain;
+            vertical-align: middle; /* Keeps it aligned with adjacent text */
+        }
+        
         /* Footer */
         .footer {
             grid-column: span 12;
@@ -287,11 +300,11 @@
     <div class="bg-gradient"></div>
 
     <nav class="navbar">
-        <div class="nav-brand">
-            <a href="index.html">CHRONOVAULT®</a>
-        </div>
+        <div class="nav-brand">CHRONOVAULT®</div>
         <div class="nav-links">
-            <a href="retrieve.html">Switch to Retrieve</a>
+            <a href="index.html">Home</a>
+            <a> | </a>
+            <a href="retrieve.html">Retrieve</a>
         </div>
     </nav>
 
@@ -313,7 +326,9 @@
             <div class="upload-left">
                 <div class="drop-zone" id="dropZone">
                     <input type="file" id="fileInput">
-                    <div class="zone-icon">📤</div>
+                    <div class="zone-icon">
+                        <img src="images/upload.png" alt="Upload Icon">
+                    </div>
                     <h3>Drag & Drop File</h3>
                     <p>or click to browse</p>
                 </div>
