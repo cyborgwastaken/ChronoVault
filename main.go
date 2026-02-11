@@ -10,7 +10,7 @@ import (
 // --- Shared Configuration & Structs ---
 
 const (
-	ChunkSize   = 1024 // 1KB chunks
+	ChunkSize   = 256 * 1024 // 256KB chunks
 	StoreFolder = "shredded_store"
 )
 
