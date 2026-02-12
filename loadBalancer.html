@@ -56,6 +56,7 @@
     <p>Secure Gateway to Distributed Nodes</p>
     
     <button onclick="distributeTraffic()">ENTER VAULT</button>
+    <button onclick="seeDocs()">See Documentation</button>
 
     <script>
         // Configuration: Your EC2 Instance Links
@@ -72,6 +73,12 @@
                 console.log("Routing to Node B...");
                 window.location.href = serverB;
             }
+        }
+
+        function seeDocs() {
+            
+            window.location.href = "https://cyborgwastaken.github.io/ChronoVault/";
+            
         }
     </script>
 
