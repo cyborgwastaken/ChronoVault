@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChronoVault Gateway</title>
+    <style>
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #0d1117; /* GitHub Dark Mode background */
+            color: #c9d1d9;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        p {
+            font-size: 1rem;
+            color: #8b949e;
+            margin-bottom: 40px;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            background-color: #238636; /* GitHub Green */
+            color: white;
+            border: none;
+            border-radius: 6px;
+            transition: background-color 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        button:hover {
+            background-color: #2ea043;
+        }
+
+        button:active {
+            transform: translateY(2px);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ChronoVault Access</h1>
+    <p>Secure Gateway to Distributed Nodes</p>
+    
+    <button onclick="distributeTraffic()">ENTER VAULT</button>
+
+    <script>
+        // Configuration: Your EC2 Instance Links
+        const serverA = "http://13.203.229.97:8080";
+        const serverB = "http://3.7.66.152:8080";
+
+        function distributeTraffic() {
+            // Math.random() returns a number between 0 and 1
+            // If it is less than 0.5 (50% chance), go to Server A
+            if (Math.random() < 0.5) {
+                console.log("Routing to Node A...");
+                window.location.href = serverA;
+            } else {
+                console.log("Routing to Node B...");
+                window.location.href = serverB;
+            }
+        }
+    </script>
+
+</body>
+</html>
