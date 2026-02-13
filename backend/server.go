@@ -14,13 +14,35 @@ import (
 	"strings"
 )
 
+// --- NEW: CORS Middleware ---
+func enableCORS(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Allow requests from any origin (React dev server)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Requested-With")
+
+		// Expose custom headers so React can read them
+		w.Header().Set("Access-Control-Expose-Headers", "X-Integrity-Verified, Content-Disposition")
+
+		// Handle browser preflight checks
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		next(w, r)
+	}
+}
+
 func startServer() {
 	// Ensure directories exist
 	os.Mkdir(StoreFolder, 0755)
 
 	http.Handle("/", http.FileServer(http.Dir("public")))
-	http.HandleFunc("/upload", uploadHandler)
-	http.HandleFunc("/retrieve", retrieveHandler)
+
+	// --- UPDATED: Wrap handlers with enableCORS ---
+	http.HandleFunc("/upload", enableCORS(uploadHandler))
+	http.HandleFunc("/retrieve", enableCORS(retrieveHandler))
 
 	fmt.Println("🌐 DSN Web Server Bundle started on http://localhost:8080")
 	fmt.Println("📂 Serving ./public")
@@ -29,6 +51,8 @@ func startServer() {
 		fmt.Printf("Error starting server: %v\n", err)
 	}
 }
+
+// ... (Keep your existing UploadResponse, uploadHandler, and retrieveHandler exactly as they are!) ...
 
 type UploadResponse struct {
 	OriginalHash    string `json:"original_hash"`

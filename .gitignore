@@ -1,3 +1,38 @@
-shredded_store/
-*.txt
+# Node
+frontend/node_modules/
+frontend/dist/
+dist
+dist-ssr
+
+# Go build artifacts
+backend/bin/
+backend/*.exe
+
+# Runtime / storage (do NOT commit user data)
+backend/shredded_store/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Env / secrets
+.env
+.env.local
+*.local
+
+# OS junk
 .DS_Store
+
+# Editor junk
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
