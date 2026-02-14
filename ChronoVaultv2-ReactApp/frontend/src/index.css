@@ -1,0 +1,170 @@
+:root {
+    --glass-surface: rgba(255, 255, 255, 0.03);
+    --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+    --glass-highlight: rgba(255, 255, 255, 0.1);
+    --text-main: #ffffff;
+    --text-muted: rgba(255, 255, 255, 0.6);
+    --accent: #ff3b30;
+    --success: #32d74b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: 'Inter', Helvetica, Arial, sans-serif;
+    background-color: #050505;
+    color: var(--text-main);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+h1, h2, h3, h4, p, a, ul, li { margin: 0; padding: 0; }
+
+h1 {
+    font-size: clamp(3rem, 10vw, 8rem);
+    font-weight: 900;
+    line-height: 0.9;
+    letter-spacing: -0.04em;
+    text-transform: uppercase;
+}
+
+h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+}
+
+h3 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+p {
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+a { text-decoration: none; color: inherit; }
+
+.bg-gradient {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    z-index: -1;
+    background: 
+        radial-gradient(circle at 10% 20%, rgba(255, 59, 48, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(0, 100, 255, 0.15) 0%, transparent 40%);
+}
+
+.grid-container {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    width: 100%;
+    border-bottom: var(--glass-border);
+}
+
+.glass-panel {
+    background: var(--glass-surface);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: var(--glass-border);
+    border-bottom: var(--glass-border);
+    padding: 2rem;
+    transition: background 0.3s;
+}
+
+.glass-panel:hover { background: var(--glass-highlight); }
+
+/* --- Navbar & Footer --- */
+.navbar {
+    grid-column: span 12;
+    padding: 1.5rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: var(--glass-border);
+    background: rgba(5, 5, 5, 0.7);
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.nav-brand {
+    font-weight: 900;
+    font-size: 1.5rem;
+    letter-spacing: -0.05em;
+}
+
+.nav-links { display: flex; gap: 2rem; }
+.nav-links a { font-weight: 700; font-size: 0.9rem; text-transform: uppercase; }
+.nav-links a:hover { color: var(--accent); }
+
+.footer {
+    grid-column: span 12;
+    padding: 4rem 2rem;
+    border-top: var(--glass-border);
+    display: flex;
+    justify-content: space-between;
+}
+
+/* --- Layout Elements --- */
+.hero-title {
+    grid-column: span 8;
+    padding: 6rem 2rem;
+    border-right: var(--glass-border);
+}
+
+.hero-meta, .hero-instruction {
+    grid-column: span 4;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    background: rgba(255, 255, 255, 0.02);
+    backdrop-filter: blur(10px);
+}
+
+.meta-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1rem;
+}
+
+/* --- Buttons --- */
+.btn {
+    display: inline-block;
+    padding: 1rem 3rem;
+    background: var(--text-main);
+    color: #000;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.9rem;
+    border: none;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.btn:hover { background: var(--accent); color: #fff; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.4); }
+
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--text-main);
+    color: var(--text-main);
+}
+.btn-outline:hover { background: var(--text-main); color: #000; }
+
+/* --- Miscellaneous & Media Queries --- */
+.zone-icon img { width: 4em; height: 4em; object-fit: contain; vertical-align: middle; }
+
+@media (max-width: 900px) {
+    .hero-title { grid-column: span 12; border-right: none; border-bottom: var(--glass-border); }
+    .hero-meta, .hero-instruction { grid-column: span 12; min-height: 200px; }
+    .section-header { grid-column: span 12; border-right: none; border-bottom: var(--glass-border); }
+    .section-content { grid-column: span 12; grid-template-columns: 1fr; }
+}

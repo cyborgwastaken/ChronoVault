@@ -1,0 +1,37 @@
+.
+├── backend
+│   ├── decrypt.go
+│   ├── encrypt.go
+│   ├── go.mod
+│   ├── main.go
+│   └── server.go
+├── frontend
+│   ├── README.md
+│   ├── eslint.config.js
+│   ├── images
+│   │   ├── WCVault.png
+│   │   └── upload.png
+│   ├── index.html
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── public
+│   │   └── vite.svg
+│   ├── src
+│   │   ├── App.css
+│   │   ├── App.jsx
+│   │   ├── assets
+│   │   │   └── react.svg
+│   │   ├── components
+│   │   │   ├── Footer.jsx
+│   │   │   └── Navbar.jsx
+│   │   ├── index.css
+│   │   ├── main.jsx
+│   │   └── pages
+│   │       ├── Home.jsx
+│   │       ├── NotFound.jsx
+│   │       ├── Retrieve.jsx
+│   │       └── Upload.jsx
+│   └── vite.config.js
+└── project-structure.txt
+
+9 directories, 26 files
