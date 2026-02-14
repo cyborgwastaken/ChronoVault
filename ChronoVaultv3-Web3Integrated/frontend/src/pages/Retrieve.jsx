@@ -1,28 +1,47 @@
 import { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 
-// --- Smart Contract Configuration ---
-const CONTRACT_ADDRESS = "0x1dE7A696Bb9E2f9e2E16EE5A59b73373fC8fd40b"; 
+// --- V2 Smart Contract Configuration ---
+const CONTRACT_ADDRESS = "0x551Df3762c81604EAfFb4A82A7d0ff9F71CFF5bF"; 
 
 const CONTRACT_ABI = [
     {
         "inputs": [],
         "name": "getMyVaults",
-        "outputs": [
-            {
-                "components": [
-                    { "internalType": "string", "name": "fileName", "type": "string" },
-                    { "internalType": "string", "name": "originalHash", "type": "string" },
-                    { "internalType": "string", "name": "rootHash", "type": "string" },
-                    { "internalType": "string", "name": "manifestCID", "type": "string" },
-                    { "internalType": "uint256", "name": "timestamp", "type": "uint256" }
-                ],
-                "internalType": "struct ChronoVaultStore.Vault[]",
-                "name": "",
-                "type": "tuple[]"
-            }
-        ],
+        "outputs": [{
+            "components": [
+                { "internalType": "uint256", "name": "id", "type": "uint256" },
+                { "internalType": "address", "name": "owner", "type": "address" },
+                { "internalType": "string", "name": "fileName", "type": "string" },
+                { "internalType": "string", "name": "category", "type": "string" },
+                { "internalType": "string", "name": "originalHash", "type": "string" },
+                { "internalType": "string", "name": "rootHash", "type": "string" },
+                { "internalType": "string", "name": "manifestCID", "type": "string" },
+                { "internalType": "uint256", "name": "timestamp", "type": "uint256" },
+                { "internalType": "bool", "name": "isActive", "type": "bool" }
+            ],
+            "internalType": "struct ChronoVaultV2.Vault[]",
+            "name": "",
+            "type": "tuple[]"
+        }],
         "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [{ "internalType": "uint256", "name": "_vaultId", "type": "uint256" }],
+        "name": "deleteVault",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "uint256", "name": "_vaultId", "type": "uint256" },
+            { "internalType": "address", "name": "_recipient", "type": "address" }
+        ],
+        "name": "shareVault",
+        "outputs": [],
+        "stateMutability": "nonpayable",
         "type": "function"
     }
 ];
@@ -38,7 +57,6 @@ export default function Retrieve() {
     const [manifestFile, setManifestFile] = useState(null);
     const [isRebuilding, setIsRebuilding] = useState(false);
 
-    // Drag and Drop Refs
     const manifestInputRef = useRef(null);
     const keyInputRef = useRef(null);
 
@@ -74,15 +92,20 @@ export default function Retrieve() {
 
             const data = await contract.getMyVaults();
             
-            const formattedVaults = data.map(v => ({
-                fileName: v.fileName,
-                originalHash: v.originalHash,
-                rootHash: v.rootHash,
-                manifestCID: v.manifestCID,
-                date: new Date(Number(v.timestamp) * 1000).toLocaleString() 
-            })).reverse(); 
+            // Format AND filter out deleted vaults
+            const activeVaults = data
+                .filter(v => v.isActive === true) // THE SOFT DELETE FILTER!
+                .map(v => ({
+                    id: v.id.toString(), // Store the unique ID
+                    fileName: v.fileName,
+                    category: v.category,
+                    originalHash: v.originalHash,
+                    rootHash: v.rootHash,
+                    manifestCID: v.manifestCID,
+                    date: new Date(Number(v.timestamp) * 1000).toLocaleString() 
+                })).reverse(); 
 
-            setVaults(formattedVaults);
+            setVaults(activeVaults);
         } catch (error) {
             console.error("Error fetching vaults:", error);
         } finally {
@@ -100,6 +123,47 @@ export default function Retrieve() {
         }
     };
 
+    // --- NEW V2 FUNCTIONS ---
+    const handleDeleteVault = async (vaultId) => {
+        if (!confirm("Are you sure you want to permanently delete this vault?")) return;
+        
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+            const tx = await contract.deleteVault(vaultId);
+            alert("Deletion transaction submitted. Waiting for blockchain confirmation...");
+            await tx.wait();
+            
+            alert("Vault deleted!");
+            fetchVaults(); // Refresh the list, it will instantly disappear!
+        } catch (error) {
+            console.error(error);
+            alert("Failed to delete vault.");
+        }
+    };
+
+    const handleShareVault = async (vaultId) => {
+        const recipient = prompt("Enter the MetaMask address of the person you want to share this with:");
+        if (!recipient) return;
+
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+            const tx = await contract.shareVault(vaultId, recipient);
+            alert("Sharing transaction submitted. Waiting for blockchain confirmation...");
+            await tx.wait();
+            
+            alert(`Access granted to ${recipient}!`);
+        } catch (error) {
+            console.error(error);
+            alert("Failed to share vault. Check console for details.");
+        }
+    };
+
     const handleUnlockClick = (vault) => {
         if (selectedVault === vault) {
             setSelectedVault(null);
@@ -110,7 +174,6 @@ export default function Retrieve() {
         }
     };
 
-    // --- Drag and Drop Handlers ---
     const handleManifestDrop = (e) => {
         e.preventDefault();
         e.currentTarget.style.borderColor = manifestFile ? '#32d74b' : 'rgba(255,255,255,0.2)';
@@ -207,22 +270,23 @@ export default function Retrieve() {
                     </div>
                 ) : (
                     
-                    /* --- THE FIX: We wrap the entire list in ONE grid column (span 12) to bypass grid gaps --- */
                     <div style={{ gridColumn: 'span 12', display: 'flex', flexDirection: 'column' }}>
                         
-                        {/* The Header Panel */}
                         <div className="glass-panel" style={{ padding: '2rem', borderBottom: 'var(--glass-border)' }}>
                             <div className="meta-label">Secured Artifacts ({vaults.length})</div>
                         </div>
                         
-                        {/* The Vault List Stacked Perfectly Flush */}
-                        {vaults.map((vault, index) => (
-                            <div key={index} style={{ display: 'flex', flexDirection: 'column' }}>
+                        {vaults.map((vault) => (
+                            <div key={vault.id} style={{ display: 'flex', flexDirection: 'column' }}>
                                 
-                                <div className="glass-panel list-item" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '2rem', alignItems: 'center', borderBottom: selectedVault === vault ? 'none' : 'var(--glass-border)' }}>
+                                <div className="glass-panel list-item" style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1fr 1.5fr', gap: '2rem', alignItems: 'center', borderBottom: selectedVault === vault ? 'none' : 'var(--glass-border)' }}>
                                     <div>
+                                        {/* NEW: Display the Category Badge */}
+                                        <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.1)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.6rem', color: '#fff', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+                                            {vault.category}
+                                        </div>
                                         <div className="meta-label" style={{ fontSize: '0.7rem' }}>Artifact Name</div>
-                                        <h3 style={{ fontSize: '1.2rem', margin: 0 }}>{vault.fileName}</h3>
+                                        <h3 style={{ fontSize: '1.2rem', margin: 0, wordBreak: 'break-all' }}>{vault.fileName}</h3>
                                     </div>
                                     <div>
                                         <div className="meta-label" style={{ fontSize: '0.7rem' }}>Timestamp</div>
@@ -234,22 +298,37 @@ export default function Retrieve() {
                                             {vault.rootHash}
                                         </p>
                                     </div>
-                                    <div style={{ textAlign: 'right' }}>
+
+                                    {/* NEW V2 ACTIONS PANEL */}
+                                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                        <button 
+                                            className="btn-outline" 
+                                            style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', color: '#65C2CB', borderColor: 'rgba(101,194,203,0.3)' }}
+                                            onClick={() => handleShareVault(vault.id)}
+                                        >
+                                            Share
+                                        </button>
+                                        <button 
+                                            className="btn-outline" 
+                                            style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', color: 'var(--accent)', borderColor: 'rgba(255,0,0,0.3)' }}
+                                            onClick={() => handleDeleteVault(vault.id)}
+                                        >
+                                            Delete
+                                        </button>
                                         <button 
                                             className={selectedVault === vault ? "btn" : "btn-outline"} 
                                             style={{ padding: '0.5rem 1.5rem', fontSize: '0.8rem' }}
                                             onClick={() => handleUnlockClick(vault)}
                                         >
-                                            {selectedVault === vault ? "Close Panel" : "Unlock Vault"}
+                                            {selectedVault === vault ? "Close" : "Unlock"}
                                         </button>
                                     </div>
                                 </div>
 
-                                {/* Drag & Drop Unlocking Panel */}
+                                {/* Drag & Drop Unlocking Panel (Unchanged) */}
                                 {selectedVault === vault && (
                                     <div className="glass-panel" style={{ background: 'rgba(255,255,255,0.01)', padding: '2rem', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2rem', alignItems: 'stretch' }}>
                                         
-                                        {/* Manifest Drop Zone */}
                                         <div 
                                             style={{
                                                 border: '2px dashed', 
@@ -269,7 +348,6 @@ export default function Retrieve() {
                                             </h4>
                                         </div>
 
-                                        {/* Private Key Drop Zone */}
                                         <div 
                                             style={{
                                                 border: '2px dashed', 
@@ -289,7 +367,6 @@ export default function Retrieve() {
                                             </h4>
                                         </div>
 
-                                        {/* Action Button (Now properly styled) */}
                                         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                                             <button 
                                                 className="btn" 
