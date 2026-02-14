@@ -129,9 +129,9 @@ If deploying your own contract:
 
 ## 👥 Team
 
-Built as a decentralized network initiative by **Ayushman, Aarushi, Nakshatra, Vishal, Shreena, and Vipransh**.
+Built as a decentralized network initiative by **Ayuu, Aaru, Nakshu, Vishy, Manny, and Vip**.
 
 *Future Roadmap: Implementation of Web 2.5 Relayer Architecture (Account Abstraction) for gasless, wallet-free community access.*
 
-```
+
 
