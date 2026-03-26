@@ -162,9 +162,16 @@ a { text-decoration: none; color: inherit; }
 /* --- Miscellaneous & Media Queries --- */
 .zone-icon img { width: 4em; height: 4em; object-fit: contain; vertical-align: middle; }
 
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 @media (max-width: 900px) {
     .hero-title { grid-column: span 12; border-right: none; border-bottom: var(--glass-border); }
     .hero-meta, .hero-instruction { grid-column: span 12; min-height: 200px; }
     .section-header { grid-column: span 12; border-right: none; border-bottom: var(--glass-border); }
     .section-content { grid-column: span 12; grid-template-columns: 1fr; }
+    .navbar { flex-wrap: wrap; gap: 1rem; }
+    .nav-links { flex-wrap: wrap; justify-content: center; }
 }

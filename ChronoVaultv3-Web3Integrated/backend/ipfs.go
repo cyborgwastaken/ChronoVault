@@ -9,18 +9,24 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/joho/godotenv"
 )
 
-// Helper to grab your JWT and aggressively strip hidden characters
+// Helper to grab your JWT from environment variables
 func getPinataJWT() string {
-	data, err := os.ReadFile("pinata.txt")
+	err := godotenv.Load()
 	if err != nil {
-		fmt.Println("⚠️  WARNING: Could not read pinata.txt. Make sure it is in the backend folder.")
+		fmt.Println("⚠️  WARNING: Could not load .env file. Falling back to already set system environment variables.")
+	}
+
+	jwt := os.Getenv("PINATA_JWT")
+	if jwt == "" {
+		fmt.Println("⚠️  WARNING: PINATA_JWT not found in environment.")
 		return ""
 	}
 
 	// Aggressively clean the string of all spaces, tabs, and newlines
-	jwt := string(data)
 	jwt = strings.ReplaceAll(jwt, "\n", "")
 	jwt = strings.ReplaceAll(jwt, "\r", "")
 	jwt = strings.ReplaceAll(jwt, "\t", "")

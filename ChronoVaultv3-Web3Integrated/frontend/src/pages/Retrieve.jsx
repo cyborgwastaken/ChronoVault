@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
+import { useAuth } from '../context/AuthContext';
 
 // --- V2 Smart Contract Configuration ---
-const CONTRACT_ADDRESS = "0x551Df3762c81604EAfFb4A82A7d0ff9F71CFF5bF"; 
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 
 const CONTRACT_ABI = [
     {
@@ -47,6 +48,7 @@ const CONTRACT_ABI = [
 ];
 
 export default function Retrieve() {
+    const { profile, deductCredits, linkWallet } = useAuth();
     const [vaults, setVaults] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [walletConnected, setWalletConnected] = useState(false);
@@ -59,6 +61,8 @@ export default function Retrieve() {
 
     const manifestInputRef = useRef(null);
     const keyInputRef = useRef(null);
+
+    const DOWNLOAD_COST = 10;
 
     useEffect(() => {
         checkWalletAndFetch();
@@ -83,12 +87,18 @@ export default function Retrieve() {
         try {
             await window.ethereum.request({
                 method: 'wallet_switchEthereumChain',
-                params: [{ chainId: '0xaa36a7' }], 
+                params: [{ chainId: import.meta.env.VITE_SEPOLIA_CHAIN_ID }], 
             });
 
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
+            const walletAddress = await signer.getAddress();
             const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+            // Link wallet address to user profile
+            if (profile && (!profile.wallet_address || profile.wallet_address !== walletAddress)) {
+                await linkWallet(walletAddress);
+            }
 
             const data = await contract.getMyVaults();
             
@@ -192,9 +202,18 @@ export default function Retrieve() {
             return;
         }
 
+        // Check credits
+        if (profile.credits < DOWNLOAD_COST) {
+            alert(`Insufficient credits. You need ${DOWNLOAD_COST} credits to download. Current balance: ${profile.credits}.`);
+            return;
+        }
+
         setIsRebuilding(true);
 
         try {
+            // Deduct credits first
+            await deductCredits(DOWNLOAD_COST, 'download', `Download: ${vault.fileName}`);
+
             const formData = new FormData();
             const rootHashBlob = new Blob([vault.rootHash], { type: 'text/plain' });
             formData.append('roothash_file', rootHashBlob, 'roothash.txt');
@@ -202,7 +221,7 @@ export default function Retrieve() {
             formData.append('key_file', keyFile);
             formData.append('manifest_file', manifestFile);
 
-            const response = await fetch('http://localhost:8080/retrieve', {
+            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/retrieve`, {
                 method: 'POST',
                 body: formData
             });
@@ -225,9 +244,9 @@ export default function Retrieve() {
             window.URL.revokeObjectURL(url);
 
             if (isVerified) {
-                alert("Protocol Success! Artifact Decrypted and Verified against Blockchain Hash.");
+                alert(`Protocol Success! Artifact Decrypted and Verified. ${DOWNLOAD_COST} credits deducted.`);
             } else {
-                alert("Warning: Artifact rebuilt, but failed integrity hash check.");
+                alert(`Warning: Artifact rebuilt, but failed integrity hash check. ${DOWNLOAD_COST} credits deducted.`);
             }
             
             setSelectedVault(null); 
@@ -248,6 +267,27 @@ export default function Retrieve() {
                 </header>
                 <div className="hero-instruction glass-panel" style={{ gridColumn: 'span 4' }}>
                     <p>Connect your Web3 identity to view your secured artifacts. The blockchain ledger ensures absolute mathematical proof of ownership.</p>
+                    {/* Credit Info */}
+                    <div style={{
+                        marginTop: '1rem', padding: '0.75rem',
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: '6px'
+                    }}>
+                        <div style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                        }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                Download cost: <strong style={{ color: '#fff' }}>{DOWNLOAD_COST} credits</strong>
+                            </span>
+                            <span style={{
+                                fontSize: '0.8rem', fontWeight: '700',
+                                color: profile?.credits < DOWNLOAD_COST ? 'var(--accent)' : '#32d74b'
+                            }}>
+                                Balance: {profile?.credits || 0}
+                            </span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -281,7 +321,7 @@ export default function Retrieve() {
                                 
                                 <div className="glass-panel list-item" style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1fr 1.5fr', gap: '2rem', alignItems: 'center', borderBottom: selectedVault === vault ? 'none' : 'var(--glass-border)' }}>
                                     <div>
-                                        {/* NEW: Display the Category Badge */}
+                                        {/* Display the Category Badge */}
                                         <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.1)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.6rem', color: '#fff', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
                                             {vault.category}
                                         </div>
@@ -299,7 +339,7 @@ export default function Retrieve() {
                                         </p>
                                     </div>
 
-                                    {/* NEW V2 ACTIONS PANEL */}
+                                    {/* V2 ACTIONS PANEL */}
                                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                                         <button 
                                             className="btn-outline" 
@@ -325,7 +365,7 @@ export default function Retrieve() {
                                     </div>
                                 </div>
 
-                                {/* Drag & Drop Unlocking Panel (Unchanged) */}
+                                {/* Drag & Drop Unlocking Panel */}
                                 {selectedVault === vault && (
                                     <div className="glass-panel" style={{ background: 'rgba(255,255,255,0.01)', padding: '2rem', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2rem', alignItems: 'stretch' }}>
                                         
@@ -368,20 +408,29 @@ export default function Retrieve() {
                                         </div>
 
                                         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                            {/* Credit info */}
+                                            <div style={{
+                                                marginBottom: '0.75rem', textAlign: 'center',
+                                                fontSize: '0.75rem', color: 'var(--text-muted)'
+                                            }}>
+                                                Cost: <strong style={{ color: '#fff' }}>{DOWNLOAD_COST} credits</strong>
+                                            </div>
                                             <button 
                                                 className="btn" 
                                                 style={{ 
                                                     width: '100%', 
                                                     padding: '1.5rem', 
-                                                    background: (manifestFile && keyFile) ? '#32d74b' : 'rgba(255,255,255,0.1)', 
-                                                    color: (manifestFile && keyFile) ? '#000' : 'rgba(255,255,255,0.5)',
-                                                    cursor: (manifestFile && keyFile) ? 'pointer' : 'not-allowed',
+                                                    background: (manifestFile && keyFile && profile?.credits >= DOWNLOAD_COST) ? '#32d74b' : 'rgba(255,255,255,0.1)', 
+                                                    color: (manifestFile && keyFile && profile?.credits >= DOWNLOAD_COST) ? '#000' : 'rgba(255,255,255,0.5)',
+                                                    cursor: (manifestFile && keyFile && profile?.credits >= DOWNLOAD_COST) ? 'pointer' : 'not-allowed',
                                                     border: 'none',
                                                 }}
                                                 onClick={() => handleRebuild(vault)}
-                                                disabled={isRebuilding || !manifestFile || !keyFile}
+                                                disabled={isRebuilding || !manifestFile || !keyFile || profile?.credits < DOWNLOAD_COST}
                                             >
-                                                {isRebuilding ? "Fetching from IPFS..." : "Reconstruct File"}
+                                                {isRebuilding ? "Fetching from IPFS..." : 
+                                                 profile?.credits < DOWNLOAD_COST ? "Insufficient Credits" :
+                                                 "Reconstruct File"}
                                             </button>
                                         </div>
                                     </div>

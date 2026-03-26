@@ -1,0 +1,11 @@
+Folder PATH listing for volume DevDisk
+Volume serial number is B663-B36F
+E:.
++---backend
++---frontend
+    +---images
+    +---public
+    +---src
+        +---assets
+        +---components
+        +---pages

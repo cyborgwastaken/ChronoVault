@@ -1,8 +1,10 @@
 import { useState, useRef } from 'react';
 import { ethers } from 'ethers';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 // --- V2 Smart Contract Configuration ---
-const CONTRACT_ADDRESS = "0x551Df3762c81604EAfFb4A82A7d0ff9F71CFF5bF"; 
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 
 const CONTRACT_ABI = [
     {
@@ -21,12 +23,15 @@ const CONTRACT_ABI = [
 ];
 
 export default function Upload() {
+    const { profile, deductCredits, linkWallet } = useAuth();
     const [file, setFile] = useState(null);
     const [category, setCategory] = useState("Personal"); // NEW STATE
     const [isUploading, setIsUploading] = useState(false);
     const [txStatus, setTxStatus] = useState(""); 
     const [artifactData, setArtifactData] = useState(null);
     const fileInputRef = useRef(null);
+
+    const UPLOAD_COST = 40;
 
     const handleDrop = (e) => {
         e.preventDefault();
@@ -35,24 +40,38 @@ export default function Upload() {
 
     const handleUpload = async () => {
         if (!file) return;
-        setIsUploading(true);
-        setTxStatus("Encrypting & Pushing to IPFS...");
 
-        const formData = new FormData();
-        formData.append('file', file);
+        // Check credits
+        if (profile.credits < UPLOAD_COST) {
+            alert(`Insufficient credits. You need ${UPLOAD_COST} credits to upload. Current balance: ${profile.credits}.`);
+            return;
+        }
+
+        setIsUploading(true);
 
         try {
-            const response = await fetch('http://localhost:8080/upload', { method: 'POST', body: formData });
+            // Deduct credits first
+            setTxStatus("Verifying Credits...");
+            await deductCredits(UPLOAD_COST, 'upload', `Upload: ${file.name}`);
+
+            setTxStatus("Encrypting & Pushing to IPFS...");
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/upload`, { method: 'POST', body: formData });
             if (!response.ok) throw new Error('Upload failed');
             const data = await response.json();
             
+            let txHash = null;
+
             if (window.ethereum) {
                 setTxStatus("Switching Network to Sepolia...");
                 
                 try {
                     await window.ethereum.request({
                         method: 'wallet_switchEthereumChain',
-                        params: [{ chainId: '0xaa36a7' }], 
+                        params: [{ chainId: import.meta.env.VITE_SEPOLIA_CHAIN_ID }], 
                     });
                 } catch (switchError) {
                     console.error("Failed to switch network:", switchError);
@@ -65,7 +84,13 @@ export default function Upload() {
 
                 const provider = new ethers.BrowserProvider(window.ethereum);
                 const signer = await provider.getSigner();
+                const walletAddress = await signer.getAddress();
                 const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+                // Link wallet address to user profile
+                if (!profile.wallet_address || profile.wallet_address !== walletAddress) {
+                    await linkWallet(walletAddress);
+                }
 
                 // Call the V2 Smart Contract (Now with category!)
                 const tx = await contract.secureVault(
@@ -77,12 +102,25 @@ export default function Upload() {
                 );
 
                 setTxStatus("Writing to Blockchain... Please wait.");
-                await tx.wait(); 
+                const receipt = await tx.wait(); 
+                txHash = receipt.hash;
                 
                 console.log("Vault Secured on Blockchain!");
             } else {
                 alert("MetaMask not detected. Artifacts generated locally, but not secured on-chain.");
             }
+
+            // Save vault record to Supabase
+            const { error: vaultError } = await supabase.from('vaults').insert({
+                user_id: profile.id,
+                file_name: file.name,
+                original_hash: data.original_hash,
+                root_hash: data.root_hash,
+                manifest_cid: data.manifest_content,
+                blockchain_tx: txHash,
+            });
+
+            if (vaultError) console.error('Error saving vault to Supabase:', vaultError);
 
             setArtifactData(data);
         } catch (error) {
@@ -126,6 +164,27 @@ export default function Upload() {
                 </header>
                 <div className="hero-instruction glass-panel">
                     <p>Your file will be locally encrypted, hashed, and prepared for sharded distribution. Keys remain client-side.</p>
+                    {/* Credit Info */}
+                    <div style={{
+                        marginTop: '1rem', padding: '0.75rem',
+                        background: profile?.credits < UPLOAD_COST ? 'rgba(255,59,48,0.1)' : 'rgba(50,215,75,0.05)',
+                        border: `1px solid ${profile?.credits < UPLOAD_COST ? 'rgba(255,59,48,0.2)' : 'rgba(50,215,75,0.15)'}`,
+                        borderRadius: '6px'
+                    }}>
+                        <div style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                        }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                Cost: <strong style={{ color: '#fff' }}>{UPLOAD_COST} credits</strong>
+                            </span>
+                            <span style={{
+                                fontSize: '0.8rem', fontWeight: '700',
+                                color: profile?.credits < UPLOAD_COST ? 'var(--accent)' : '#32d74b'
+                            }}>
+                                Balance: {profile?.credits || 0}
+                            </span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -181,8 +240,8 @@ export default function Upload() {
                                 <p style={{ marginBottom: '1rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '0.8rem', letterSpacing: '1px' }}>
                                     Ready for Encryption
                                 </p>
-                                <button className="btn" style={{ width: '100%' }} onClick={handleUpload} disabled={!file || isUploading}>
-                                    {isUploading ? "Processing..." : "Initiate Protocol"}
+                                <button className="btn" style={{ width: '100%' }} onClick={handleUpload} disabled={!file || isUploading || (profile?.credits < UPLOAD_COST)}>
+                                    {isUploading ? "Processing..." : profile?.credits < UPLOAD_COST ? "Insufficient Credits" : "Initiate Protocol"}
                                 </button>
                                 
                                 {txStatus && (
@@ -197,11 +256,14 @@ export default function Upload() {
                     </div>
                 </div>
             ) : (
-                /* Success Screen (Unchanged) */
+                /* Success Screen */
                 <div className="grid-container">
                     <div className="glass-panel" style={{ gridColumn: 'span 12', padding: '2rem', background: 'rgba(50, 215, 75, 0.05)' }}>
                         <h2 style={{ color: '#fff' }}>Protocol Success</h2>
                         <p style={{ color: 'var(--success)', fontWeight: 'bold', marginTop: '0.5rem' }}>✓ Secured to Blockchain under category: {category}</p>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.3rem' }}>
+                            {UPLOAD_COST} credits deducted. Remaining balance: {profile?.credits || 0}
+                        </p>
                     </div>
                     
                     <div className="glass-panel" style={{ gridColumn: 'span 4', wordBreak: 'break-all' }}>

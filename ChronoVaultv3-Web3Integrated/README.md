@@ -16,7 +16,17 @@ ChronoVault is a full-stack demo that shreds, encrypts, and reconstructs files u
 
 ## Quick start (local)
 
-### 1) Start the Go backend (HTTP server)
+### 1) Pinata API Configuration
+
+Create a `.env` file in the `backend/` directory to store your Pinata API keys for IPFS uploads:
+
+```env
+PINATA_API_KEY=your_api_key
+PINATA_API_SECRET=your_api_secret
+PINATA_JWT=your_jwt
+```
+
+### 2) Start the Go backend (HTTP server)
 
 ```bash
 cd backend
@@ -28,7 +38,7 @@ The server listens on `http://localhost:8080` and exposes:
 - `POST /upload` for encryption + chunk storage + manifest generation
 - `POST /retrieve` for reconstruction + verification + decryption
 
-### 2) Start the React frontend
+### 3) Start the React frontend
 
 ```bash
 cd frontend
