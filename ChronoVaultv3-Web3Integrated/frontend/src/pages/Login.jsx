@@ -116,7 +116,7 @@ export default function Login() {
                                 Welcome Bonus
                             </div>
                             <p style={{ fontSize: '0.85rem', margin: 0 }}>
-                                New accounts receive <strong style={{ color: '#fff' }}>10 credits</strong> to get started.
+                                New accounts receive <strong style={{ color: '#fff' }}>150 credits</strong> to get started.
                                 Upload costs 40 credits, download costs 10 credits.
                             </p>
                         </div>
