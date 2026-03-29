@@ -10,9 +10,30 @@ import (
 	"path/filepath"
 )
 
+unc DownloadChunkFromIPFS(cid string) ([]byte, error) {
+	fmt.Printf("   [IPFS] Locating and fetching CID: %s...\n", cid)
+
+	// We use the public IPFS gateway to retrieve the file
+	url := "https://gateway.pinata.cloud/ipfs/" + cid
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to download CID %s: status %d", cid, resp.StatusCode)
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+
 // EncryptAndStore handles the encryption and shredding logic
-func EncryptAndStore(originalData []byte, filename string) {
+func EncryptAndStore(originalData []byte, filename string) (string, string, string, []byte){
 	fmt.Println("--- PHASE 1: ENCRYPT & SHRED ---")
+	os.MkdirAll(StoreFolder, os.ModePerm)
 
 	// 1. Hash Original Data (Identity)
 	originalHash := HashData(originalData)
@@ -42,16 +63,15 @@ func EncryptAndStore(originalData []byte, filename string) {
 			end = len(encryptedData)
 		}
 		chunk := encryptedData[i:end]
+        cid, err := UploadChunkToIPFS(chunk, filename)
+if err != nil {
+	panic(err)
+}
 
-		// Hash the chunk
-		hash := HashData(chunk)
+chunkHashes = append(chunkHashes, cid)
+		
 
-		// Write to "Network" (Disk)
-		path := filepath.Join(StoreFolder, hash)
-		err := os.WriteFile(path, chunk, 0644)
-		Check(err)
-
-		chunkHashes = append(chunkHashes, hash)
+		
 	}
 	fmt.Printf("[Enc] Shredded file into %d chunks\n", len(chunkHashes))
 
@@ -67,4 +87,5 @@ func EncryptAndStore(originalData []byte, filename string) {
 		manifestContent += h + "\n"
 	}
 	os.WriteFile("manifest_"+filename, []byte(manifestContent), 0644)
+	return originalHash, rootNode.Hash, manifestContent, key
 }

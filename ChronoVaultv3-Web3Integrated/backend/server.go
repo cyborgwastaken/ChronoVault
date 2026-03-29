@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -71,58 +70,19 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Identity
-	originalHash := HashData(data)
-
-	// 2. Key Gen
-	key := make([]byte, 32)
-	io.ReadFull(rand.Reader, key)
-
-	// 3. Encrypt
-	block, _ := aes.NewCipher(key)
-	gcm, _ := cipher.NewGCM(block)
-	nonce := make([]byte, gcm.NonceSize())
-	io.ReadFull(rand.Reader, nonce)
-	encryptedData := gcm.Seal(nonce, nonce, data, nil)
-
-	// 4. Shred & Push to IPFS
-	fmt.Println("[Web3 Upload] Pushing encrypted chunks to IPFS Network...")
-	var chunkCIDs []string
-
-	for i := 0; i < len(encryptedData); i += ChunkSize {
-		end := i + ChunkSize
-		if end > len(encryptedData) {
-			end = len(encryptedData)
-		}
-		chunk := encryptedData[i:end]
-
-		// NEW: Upload to IPFS instead of local disk
-		chunkName := fmt.Sprintf("%s_chunk_%d", header.Filename, i/ChunkSize)
-		cid, err := UploadChunkToIPFS(chunk, chunkName)
-		if err != nil {
-			fmt.Println("IPFS Upload Error:", err)
-			http.Error(w, "Error uploading to IPFS", http.StatusInternalServerError)
-			return
-		}
-
-		chunkCIDs = append(chunkCIDs, cid)
+	fileName := header.Filename
+	if strings.TrimSpace(fileName) == "" {
+		fileName = "uploaded_file"
 	}
 
-	// 5. Merkle Tree (Now built from CIDs instead of local hashes)
-	rootNode := BuildMerkleTree(chunkCIDs)
-	rootHash := rootNode.Hash
-
-	// 6. Save Manifest (List of IPFS CIDs)
-	manifestLines := []string{"# Filename: " + header.Filename}
-	manifestLines = append(manifestLines, chunkCIDs...)
-	manifestContent := strings.Join(manifestLines, "\n")
+	originalHash, rootHash, manifestContent, key := EncryptAndStore(data, fileName)
 
 	// --- RESPONSE ---
 	resp := UploadResponse{
 		OriginalHash:    originalHash,
 		RootHash:        rootHash,
 		EncryptionKey:   hex.EncodeToString(key),
-		FileName:        header.Filename,
+		FileName:        fileName,
 		ManifestContent: manifestContent,
 	}
 
@@ -140,9 +100,20 @@ func retrieveHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseMultipartForm(10 << 20)
 
 	// Extract form files (Root Hash, Key, Manifest, Original Hash)
-	rootFile, _, _ := r.FormFile("roothash_file")
-	rootBytes, _ := io.ReadAll(rootFile)
-	rootHash := strings.TrimSpace(string(rootBytes))
+	rootFile, _, err := r.FormFile("roothash_file")
+if err != nil {
+	http.Error(w, "Missing root hash", http.StatusBadRequest)
+	return
+}
+defer rootFile.Close()
+
+rootBytes, err := io.ReadAll(rootFile)
+if err != nil {
+	http.Error(w, "Failed to read root hash", http.StatusInternalServerError)
+	return
+}
+
+rootHash := strings.TrimSpace(string(rootBytes))
 
 	keyFile, _, _ := r.FormFile("key_file")
 	keyBytes, _ := io.ReadAll(keyFile)

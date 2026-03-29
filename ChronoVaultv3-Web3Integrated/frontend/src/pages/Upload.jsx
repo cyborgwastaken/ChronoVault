@@ -26,6 +26,8 @@ export default function Upload() {
     const { profile, deductCredits, linkWallet } = useAuth();
     const [file, setFile] = useState(null);
     const [category, setCategory] = useState("Personal"); // NEW STATE
+    const [timerEnabled, setTimerEnabled] = useState(false);
+    const [selectedDuration, setSelectedDuration] = useState(10000);
     const [isUploading, setIsUploading] = useState(false);
     const [txStatus, setTxStatus] = useState(""); 
     const [artifactData, setArtifactData] = useState(null);
@@ -60,8 +62,23 @@ export default function Upload() {
             formData.append('file', file);
 
             const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/upload`, { method: 'POST', body: formData });
-            if (!response.ok) throw new Error('Upload failed');
+            console.log("RESPONSE STATUS:", response.status);
+
+            const text = await response.text();
+            console.log("RAW RESPONSE:", text);
+
+            const data2 = JSON.parse(text);
+            console.log("PARSED DATA:", data2);
+            if (!response.ok) {
+                const errText = await response.text();
+                alert(errText); // 🔥 show real backend error
+                return;
+              }
             const data = await response.json();
+            console.log("UPLOAD RESPONSE:", data);
+            const unlockTime = timerEnabled
+                ? new Date(Date.now() + Number(selectedDuration))
+                : null;
             
             let txHash = null;
 
@@ -118,11 +135,14 @@ export default function Upload() {
                 root_hash: data.root_hash,
                 manifest_cid: data.manifest_content,
                 blockchain_tx: txHash,
+                timer_enabled: timerEnabled,
+                unlock_time: unlockTime ? unlockTime.toISOString() : null,
             });
 
             if (vaultError) console.error('Error saving vault to Supabase:', vaultError);
 
             setArtifactData(data);
+            console.log("SETTING ARTIFACT:", data);
         } catch (error) {
             console.error(error);
             alert("Protocol Failed: " + error.message);
@@ -231,6 +251,30 @@ export default function Upload() {
                                     <option value="Financial" style={{ color: '#000' }}>Financial Documents</option>
                                     <option value="Code" style={{ color: '#000' }}>Source Code</option>
                                 </select>
+                            </div>
+
+                            <div style={{ marginTop: '1.5rem' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={timerEnabled}
+                                        onChange={(e) => setTimerEnabled(e.target.checked)}
+                                    />
+                                    Enable Time Lock
+                                </label>
+
+                                {timerEnabled && (
+                                    <select
+                                        value={selectedDuration}
+                                        onChange={(e) => setSelectedDuration(Number(e.target.value))}
+                                        style={{ marginTop: '0.5rem', width: '100%', padding: '1rem', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', outline: 'none' }}
+                                    >
+                                        <option value={10000} style={{ color: '#000' }}>10 seconds</option>
+                                        <option value={30000} style={{ color: '#000' }}>30 seconds</option>
+                                        <option value={60000} style={{ color: '#000' }}>1 minute</option>
+                                        <option value={3600000} style={{ color: '#000' }}>1 hour</option>
+                                    </select>
+                                )}
                             </div>
 
                         </div>

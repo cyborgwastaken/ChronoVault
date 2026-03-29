@@ -76,6 +76,7 @@ func UploadChunkToIPFS(chunk []byte, filename string) (string, error) {
 	}
 
 	return "", fmt.Errorf("failed to upload: %s", string(respBody))
+	fmt.Println("PINATA RAW RESPONSE:", string(respBody))
 }
 
 // DownloadChunkFromIPFS fetches a chunk back from the decentralized network

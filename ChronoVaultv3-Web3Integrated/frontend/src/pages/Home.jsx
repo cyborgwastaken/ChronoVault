@@ -1,6 +1,8 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 export default function Home() {
+    const navigate = useNavigate();
+
     return (
         <>
             {/* Hero Section */}
@@ -18,6 +20,13 @@ export default function Home() {
                     <div style={{ marginTop: '2rem' }}>
                         <Link to="/upload" className="btn">Upload</Link>
                         <Link to="/retrieve" className="btn btn-outline" style={{ marginLeft: '1rem' }}>Retrieve</Link>
+                        <button
+                            className="btn btn-outline"
+                            style={{ marginLeft: '1rem' }}
+                            onClick={() => navigate('/time-lock')}
+                        >
+                            Time Locked Vault
+                        </button>
                     </div>
                 </div>
             </div>

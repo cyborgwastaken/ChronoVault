@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext';
 import Home from './pages/Home.jsx';
 import Upload from './pages/Upload.jsx';
 import Retrieve from './pages/Retrieve.jsx';
+import TimeLockUpload from './pages/TimeLockUpload.jsx';
 import Login from './pages/Login.jsx';
 import Admin from './pages/Admin.jsx';
 import Navbar from './components/Navbar.jsx';
@@ -28,6 +29,11 @@ function App() {
             <Route path="/upload" element={
               <ProtectedRoute>
                 <Upload />
+              </ProtectedRoute>
+            } />
+            <Route path="/time-lock" element={
+              <ProtectedRoute>
+                <TimeLockUpload />
               </ProtectedRoute>
             } />
             <Route path="/retrieve" element={
