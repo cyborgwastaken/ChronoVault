@@ -75,14 +75,22 @@ func HashData(data []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
-// BuildMerkleTree: Used by both Encrypt (to create root) and Decrypt (to verify)
+// BuildMerkleTree: Used by both Encrypt (to create root) and Decrypt (to verify).
+//
+// PATCH-WORK REPLACED: The original returned &MerkleNode{Hash: ""} for an
+// empty input. Any retrieve request with an empty manifest would calculate a
+// root of "" which could match a stored root of "" — bypassing integrity checks
+// on a vault that was never properly shredded.
+//
+// INDUSTRY STANDARD: Return nil so callers can treat a nil root as an explicit
+// error condition and reject it before comparing against a stored root hash.
 func BuildMerkleTree(hashes []string) *MerkleNode {
+	if len(hashes) == 0 {
+		return nil // callers must treat nil as "no chunks — integrity failure"
+	}
 	var nodes []*MerkleNode
 	for _, h := range hashes {
 		nodes = append(nodes, &MerkleNode{Hash: h})
-	}
-	if len(nodes) == 0 {
-		return &MerkleNode{Hash: ""}
 	}
 	return recursiveMerkle(nodes)
 }

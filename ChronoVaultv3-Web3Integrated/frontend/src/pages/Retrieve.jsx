@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import { supabase, authFetch } from '../lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { ShieldAlert, Download, Clock, GlobeLock, Database, Trash2, Key, FileText, CheckCircle2, ChevronUp } from 'lucide-react';
+import { ShieldAlert, Download, Clock, GlobeLock, Database, Trash2, Key, FileText, CheckCircle2, ChevronUp, AlertTriangle } from 'lucide-react';
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 
@@ -23,6 +24,8 @@ export default function Retrieve() {
     const [isDeleting, setIsDeleting] = useState(false);
     const [txStatus, setTxStatus] = useState("");
     const [filter, setFilter] = useState('all');
+    const [purgeModal, setPurgeModal] = useState(null); // vault to purge, or null
+    const [purgeText, setPurgeText] = useState("");
 
     const manifestInputRef = useRef(null);
     const keyInputRef = useRef(null);
@@ -55,6 +58,8 @@ export default function Retrieve() {
             }
 
             const blockchainByRoot = new Map();
+            let blockchainQueryOk = false; // stays false if the RPC call throws
+
             try {
                 const contract = new ethers.Contract(CONTRACT_ADDRESS, [
                     "function getMyVaults() view returns (tuple(uint256 id,address owner,string fileName,string category,string originalHash,string rootHash,string manifestCID,uint256 timestamp,bool isActive)[])"
@@ -68,7 +73,8 @@ export default function Retrieve() {
                         date: new Date(ts).toLocaleString(), timestamp: ts, onChain: true
                     });
                 });
-            } catch (err) { console.error("Blockchain error:", err) }
+                blockchainQueryOk = true;
+            } catch (err) { console.error("Blockchain error:", err); }
 
             const allVaults = [];
             const seenRoots = new Set();
@@ -85,7 +91,13 @@ export default function Retrieve() {
                         manifestCID: db.manifest_cid, date: new Date(ts).toLocaleString(),
                         timestamp: ts, timer_enabled: db.timer_enabled, unlock_time: db.unlock_time,
                         geo_enabled: db.geo_enabled, latitude: db.latitude, longitude: db.longitude,
-                        onChain: blockchainByRoot.has(db.root_hash)
+                        blockchainTx: db.blockchain_tx || null,
+                        // onChain: the Supabase root_hash exists as a key in the
+                        // blockchain map, meaning on-chain rootHash === db root_hash.
+                        onChain: blockchainByRoot.has(db.root_hash),
+                        // blockchainQueryOk lets handleUnlockClick distinguish
+                        // "tampered" from "RPC temporarily unavailable".
+                        blockchainQueryOk,
                     });
                 });
             }
@@ -106,6 +118,17 @@ export default function Retrieve() {
     };
 
     const handleUnlockClick = (vault) => {
+        // Blockchain integrity check.
+        // Only block when ALL three conditions are true:
+        //   1. This vault was registered on-chain (has a tx hash in Supabase).
+        //   2. The blockchain RPC call succeeded this session (network was reachable).
+        //   3. The root hash from Supabase is NOT found in the on-chain vault set.
+        // Condition 2 prevents a temporary RPC outage from locking every vault.
+        if (vault.blockchainTx && vault.blockchainQueryOk && !vault.onChain) {
+            toast.error("Integrity check failed: root hash in Supabase does not match the blockchain record. Access blocked.");
+            return;
+        }
+
         if (vault.timer_enabled) {
             const now = new Date();
             const unlockTime = new Date(vault.unlock_time);
@@ -120,21 +143,28 @@ export default function Retrieve() {
         setManifestFile(null);
     };
 
-    const handleDelete = async (vault) => {
-        if (!vault.manifestCID) {
-            toast.error("No manifest data found.");
-            return;
-        }
-        const ok = window.confirm(`Delete '${vault.fileName}'? This will destroy shredded data from IPFS.`);
-        if (!ok) return;
+    const handleDelete = (vault) => {
+        if (!vault.manifestCID) { toast.error("No manifest data found."); return; }
+        setPurgeText("");
+        setPurgeModal(vault);
+        document.body.style.overflow = 'hidden';
+    };
 
+    const closePurgeModal = () => {
+        setPurgeModal(null);
+        document.body.style.overflow = '';
+    };
+
+    const executePurge = async () => {
+        const vault = purgeModal;
+        closePurgeModal();
         setIsDeleting(true);
         try {
             const formData = new FormData();
             const manifestBlob = new Blob([vault.manifestCID], { type: "text/plain" });
             formData.append("manifest_file", manifestBlob, "manifest.txt");
 
-            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/delete`, {
+            const response = await authFetch(`${import.meta.env.VITE_BACKEND_URL}/delete`, {
                 method: "POST", body: formData
             });
             if (!response.ok) throw new Error(await response.text());
@@ -189,7 +219,7 @@ export default function Retrieve() {
             const rootBlob = new Blob([vault.rootHash], { type: "text/plain" });
             formData.append("roothash_file", rootBlob, "roothash.txt");
 
-            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/retrieve`, {
+            const response = await authFetch(`${import.meta.env.VITE_BACKEND_URL}/retrieve`, {
                 method: "POST", body: formData
             });
             if (!response.ok) throw new Error(await response.text());
@@ -414,6 +444,65 @@ export default function Retrieve() {
                                 )}
                             </Card>
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Purge Confirmation Modal */}
+            {purgeModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    {/* Backdrop */}
+                    <div
+                        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        onClick={closePurgeModal}
+                    />
+
+                    {/* Panel */}
+                    <div className="relative w-full max-w-md rounded-xl border border-destructive/30 bg-card shadow-2xl p-6 animate-fade-in">
+                        <div className="flex items-start gap-4 mb-5">
+                            <div className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full bg-destructive/10 border border-destructive/20">
+                                <AlertTriangle className="w-5 h-5 text-destructive" />
+                            </div>
+                            <div>
+                                <h2 className="text-base font-semibold text-foreground mb-1">Permanently Destroy Vault</h2>
+                                <p className="text-xs text-muted-foreground leading-relaxed">
+                                    This will unpin all IPFS shards for{' '}
+                                    <span className="font-mono text-foreground break-all">"{purgeModal.fileName}"</span>.
+                                    {' '}This action cannot be undone.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2 mb-5">
+                            <label className="text-xs font-medium text-muted-foreground">
+                                Type <span className="font-mono font-bold text-destructive">PURGE</span> to confirm
+                            </label>
+                            <Input
+                                autoFocus
+                                value={purgeText}
+                                onChange={e => setPurgeText(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter' && purgeText === 'PURGE') executePurge(); }}
+                                placeholder="PURGE"
+                                className="font-mono border-destructive/30 focus-visible:ring-destructive/40"
+                            />
+                        </div>
+
+                        <div className="flex gap-3">
+                            <Button
+                                variant="outline"
+                                className="flex-1"
+                                onClick={closePurgeModal}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                disabled={purgeText !== 'PURGE'}
+                                onClick={executePurge}
+                            >
+                                <Trash2 className="w-4 h-4 mr-2" /> Confirm Purge
+                            </Button>
+                        </div>
                     </div>
                 </div>
             )}

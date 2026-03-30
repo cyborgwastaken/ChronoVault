@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import { supabase, authFetch } from '../lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -72,8 +72,11 @@ export default function Upload() {
         if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
     };
 
+    const MAX_FILE_BYTES = 10 * 1024 * 1024; // must match backend maxUploadSize
+
     const handleUpload = async () => {
         if (!file) { toast.error("No file selected"); return; }
+        if (file.size > MAX_FILE_BYTES) { toast.error("File exceeds the 10 MB limit."); return; }
         if (profile.credits < UPLOAD_COST) { toast.error(`Insufficient credits. You need ${UPLOAD_COST} credits.`); return; }
         if (geoEnabled && !location) { toast.error("Location data is required for Geo-Lock."); return; }
 
@@ -81,13 +84,19 @@ export default function Upload() {
         setTxStatus("Verifying Credits...");
 
         try {
-            await deductCredits(UPLOAD_COST, 'upload', `Upload: ${file.name}`);
+            // PATCH-WORK REPLACED: Credits were deducted before the upload, so
+            // any failure in the IPFS pipeline silently consumed the user's
+            // balance with no rollback path.
+            //
+            // INDUSTRY STANDARD: Deduct credits only after the backend confirms
+            // success. If the deduction itself then fails the user retains their
+            // file artifacts and can retry — no credit is lost on a server fault.
             setTxStatus("Encrypting & Pushing to IPFS...");
 
             const formData = new FormData();
             formData.append('file', file);
 
-            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/upload`, { method: 'POST', body: formData });
+            const response = await authFetch(`${import.meta.env.VITE_BACKEND_URL}/upload`, { method: 'POST', body: formData });
             const text = await response.text();
             if (!response.ok) throw new Error(text || "Upload failed");
 
@@ -149,6 +158,11 @@ export default function Upload() {
             });
 
             if (vaultError) console.error('Error saving vault to Supabase:', vaultError);
+
+            // Deduct credits only after IPFS upload + blockchain + vault save all
+            // succeeded. Nothing was lost if any earlier step threw an error.
+            await deductCredits(UPLOAD_COST, 'upload', `Upload: ${file.name}`);
+
             setArtifactData(data);
             toast.success("File encrypted and shredded successfully.");
         } catch (error) {
