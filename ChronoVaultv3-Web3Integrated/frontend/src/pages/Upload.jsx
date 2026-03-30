@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -31,7 +31,32 @@ export default function Upload() {
     const [isUploading, setIsUploading] = useState(false);
     const [txStatus, setTxStatus] = useState(""); 
     const [artifactData, setArtifactData] = useState(null);
+    const [geoEnabled, setGeoEnabled] = useState(false);
+    const [location, setLocation] = useState(null);
+    const [locationError, setLocationError] = useState("");
     const fileInputRef = useRef(null);
+
+    useEffect(() => {
+        if (geoEnabled && !location && !locationError) {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        setLocation({
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude
+                        });
+                        setLocationError("");
+                    },
+                    (err) => {
+                        console.error("Geolocation error:", err);
+                        setLocationError("Failed to access location. Please enable location services.");
+                    }
+                );
+            } else {
+                setLocationError("Geolocation not supported by your browser.");
+            }
+        }
+    }, [geoEnabled, location, locationError]);
 
     const UPLOAD_COST = 40;
 
@@ -46,6 +71,11 @@ export default function Upload() {
         // Check credits
         if (profile.credits < UPLOAD_COST) {
             alert(`Insufficient credits. You need ${UPLOAD_COST} credits to upload. Current balance: ${profile.credits}.`);
+            return;
+        }
+
+        if (geoEnabled && !location) {
+            alert("Location data is required to enable Geo-Lock. Please allow location access.");
             return;
         }
 
@@ -135,6 +165,9 @@ export default function Upload() {
                 blockchain_tx: txHash,
                 timer_enabled: timerEnabled,
                 unlock_time: unlockTime ? unlockTime.toISOString() : null,
+                geo_enabled: geoEnabled,
+                latitude: location ? location.latitude : null,
+                longitude: location ? location.longitude : null,
             });
 
             if (vaultError) console.error('Error saving vault to Supabase:', vaultError);
@@ -275,6 +308,22 @@ export default function Upload() {
                                 )}
                             </div>
 
+                            <div style={{ marginTop: '1.5rem' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={geoEnabled}
+                                        onChange={(e) => setGeoEnabled(e.target.checked)}
+                                    />
+                                    Enable Geo Lock
+                                </label>
+                                {geoEnabled && (
+                                    <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: location ? '#32d74b' : (locationError ? 'var(--accent)' : 'var(--text-muted)') }}>
+                                        {locationError ? locationError : location ? `Location locked: ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` : "Requesting location permission..."}
+                                    </div>
+                                )}
+                            </div>
+
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100%', borderLeft: 'var(--glass-border)', paddingLeft: '3rem' }}>
@@ -282,7 +331,7 @@ export default function Upload() {
                                 <p style={{ marginBottom: '1rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '0.8rem', letterSpacing: '1px' }}>
                                     Ready for Encryption
                                 </p>
-                                <button className="btn" style={{ width: '100%' }} onClick={handleUpload} disabled={!file || isUploading || (profile?.credits < UPLOAD_COST)}>
+                                <button className="btn" style={{ width: '100%' }} onClick={handleUpload} disabled={!file || isUploading || (profile?.credits < UPLOAD_COST) || (geoEnabled && !location)}>
                                     {isUploading ? "Processing..." : profile?.credits < UPLOAD_COST ? "Insufficient Credits" : "Initiate Protocol"}
                                 </button>
                                 

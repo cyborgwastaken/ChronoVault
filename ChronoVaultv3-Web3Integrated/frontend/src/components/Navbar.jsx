@@ -10,6 +10,7 @@ export default function Navbar() {
         { path: '/', label: 'Home' },
         { path: '/upload', label: 'Upload' },
         { path: '/time-lock', label: 'Time Lock' },
+        { path: '/geo-lock', label: 'Geo Lock' },
         { path: '/retrieve', label: 'Retrieve' },
     ];
 

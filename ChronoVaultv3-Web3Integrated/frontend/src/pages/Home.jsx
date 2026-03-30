@@ -27,6 +27,13 @@ export default function Home() {
                         >
                             Time Locked Vault
                         </button>
+                        <button
+                            className="btn btn-outline"
+                            style={{ marginLeft: '1rem', marginTop: '1rem' }}
+                            onClick={() => navigate('/geo-lock')}
+                        >
+                            Geo Locked Vault
+                        </button>
                     </div>
                 </div>
             </div>

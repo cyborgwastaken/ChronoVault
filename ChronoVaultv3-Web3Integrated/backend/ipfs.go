@@ -97,3 +97,32 @@ func DownloadChunkFromIPFS(cid string) ([]byte, error) {
 
 	return io.ReadAll(resp.Body)
 }
+
+// UnpinFromIPFS removes a pinned file from the global IPFS network via Pinata
+func UnpinFromIPFS(cid string) error {
+	jwt := getPinataJWT()
+	if jwt == "" {
+		return fmt.Errorf("missing JWT")
+	}
+
+	url := "https://api.pinata.cloud/pinning/unpin/" + cid
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Authorization", "Bearer "+jwt)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 && resp.StatusCode != 404 { // 404 is fine (already deleted)
+		return fmt.Errorf("failed to unpin CID %s: status %d", cid, resp.StatusCode)
+	}
+
+	fmt.Printf("   [IPFS] Successfully unpinned CID: %s\n", cid)
+	return nil
+}

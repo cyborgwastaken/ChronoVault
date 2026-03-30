@@ -16,6 +16,8 @@ export default function Retrieve() {
     const [keyFile, setKeyFile] = useState(null);
     const [manifestFile, setManifestFile] = useState(null);
     const [isRebuilding, setIsRebuilding] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [txStatus, setTxStatus] = useState("");
     const [restoreSuccess, setRestoreSuccess] = useState(null);
     const [filter, setFilter] = useState('all');
 
@@ -90,7 +92,7 @@ export default function Retrieve() {
                     allVaults.push({
                         id: "db_" + db.id,
                         fileName: db.file_name,
-                        category: db.timer_enabled ? "TimeLock" : "Standard",
+                        category: db.geo_enabled ? "GeoLock" : db.timer_enabled ? "TimeLock" : "Standard",
                         originalHash: db.original_hash,
                         rootHash: db.root_hash,
                         manifestCID: db.manifest_cid,
@@ -98,17 +100,13 @@ export default function Retrieve() {
                         timestamp: ts,
                         timer_enabled: db.timer_enabled,
                         unlock_time: db.unlock_time,
+                        geo_enabled: db.geo_enabled,
+                        latitude: db.latitude,
+                        longitude: db.longitude,
                         onChain: blockchainByRoot.has(db.root_hash)
                     });
                 });
             }
-
-            // Add any blockchain-only vaults not already in Supabase
-            blockchainByRoot.forEach((vault, rootHash) => {
-                if (!seenRoots.has(rootHash)) {
-                    allVaults.push(vault);
-                }
-            });
 
             allVaults.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             setVaults(allVaults);
@@ -144,6 +142,49 @@ export default function Retrieve() {
         setManifestFile(null);
     };
 
+    const handleDelete = async (vault) => {
+        if (!vault.manifestCID) {
+            alert("No manifest data found. Unable to purge shards from IPFS.");
+            return;
+        }
+        
+        const ok = window.confirm(`WARNING: Are you sure you want to permanently delete '${vault.fileName}'? This will destroy the shredded data from the IPFS network and remove the database record.`);
+        if (!ok) return;
+
+        setIsDeleting(true);
+        try {
+            const formData = new FormData();
+            const manifestBlob = new Blob([vault.manifestCID], { type: "text/plain" });
+            formData.append("manifest_file", manifestBlob, "manifest.txt");
+
+            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/delete`, {
+                method: "POST",
+                body: formData
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(errText);
+            }
+
+            // Remove from Supabase
+            if (vault.id && vault.id.toString().startsWith("db_")) {
+                const dbId = vault.id.replace("db_", "");
+                await supabase.from('vaults').delete().eq('id', dbId);
+            } else {
+                await supabase.from('vaults').delete().eq('root_hash', vault.rootHash);
+            }
+
+            setVaults(prev => prev.filter(v => v.id !== vault.id));
+            if (selectedVault === vault) setSelectedVault(null);
+            alert("Vault and its IPFS shards have been permanently destroyed.");
+        } catch (err) {
+            alert("Delete failed: " + err.message);
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
     const handleRebuild = async (vault) => {
         if (!keyFile || !manifestFile) {
             alert("Need manifest + key");
@@ -158,7 +199,38 @@ export default function Retrieve() {
         setIsRebuilding(true);
         setRestoreSuccess(null);
 
+        if (vault.geo_enabled) {
+            setTxStatus("Verifying your physical location...");
+            const getLoc = () => new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej));
+            try {
+                const pos = await getLoc();
+                const userLat = pos.coords.latitude;
+                const userLon = pos.coords.longitude;
+                
+                // Haversine formula
+                const p = 0.017453292519943295;
+                const c = Math.cos;
+                const a = 0.5 - c((userLat - vault.latitude) * p)/2 + 
+                        c(vault.latitude * p) * c(userLat * p) * 
+                        (1 - c((userLon - vault.longitude) * p))/2;
+                const distanceKm = 12742 * Math.asin(Math.sqrt(a));
+
+                if (distanceKm > 2) { // 2km radius
+                    alert(`Access Denied: You are not at the required location to unlock this vault. You are ${distanceKm.toFixed(2)} km away.`);
+                    setIsRebuilding(false);
+                    setTxStatus("");
+                    return;
+                }
+            } catch (err) {
+                alert("Failed to verify location. You must allow location access to unlock this Geo-Locked Vault.");
+                setIsRebuilding(false);
+                setTxStatus("");
+                return;
+            }
+        }
+
         try {
+            setTxStatus("Reconstructing vault from nodes...");
             await deductCredits(DOWNLOAD_COST, 'download', `Download ${vault.fileName}`);
 
             const formData = new FormData();
@@ -196,6 +268,7 @@ export default function Retrieve() {
             alert(err.message);
         } finally {
             setIsRebuilding(false);
+            setTxStatus("");
         }
     };
 
@@ -324,7 +397,7 @@ export default function Retrieve() {
                         marginBottom: '0.5rem'
                     }}>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginRight: '0.5rem' }}>Filter:</span>
-                        {['all', 'standard', 'time-locked'].map(f => (
+                        {['all', 'standard', 'time-locked', 'geo-locked'].map(f => (
                             <button
                                 key={f}
                                 onClick={() => setFilter(f)}
@@ -342,14 +415,15 @@ export default function Retrieve() {
                                     transition: 'all 0.2s ease'
                                 }}
                             >
-                                {f === 'all' ? 'All' : f === 'standard' ? 'Standard' : 'Time-Locked'}
+                                {f === 'all' ? 'All' : f === 'standard' ? 'Standard' : f === 'geo-locked' ? 'Geo-Locked' : 'Time-Locked'}
                             </button>
                         ))}
                         <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                             {vaults.filter(v =>
                                 filter === 'all' ? true :
                                 filter === 'time-locked' ? v.timer_enabled :
-                                !v.timer_enabled
+                                filter === 'geo-locked' ? v.geo_enabled :
+                                !v.timer_enabled && !v.geo_enabled
                             ).length} vault{vaults.length !== 1 ? 's' : ''}
                         </span>
                     </div>
@@ -357,7 +431,8 @@ export default function Retrieve() {
                     {vaults.filter(v =>
                         filter === 'all' ? true :
                         filter === 'time-locked' ? v.timer_enabled :
-                        !v.timer_enabled
+                        filter === 'geo-locked' ? v.geo_enabled :
+                        !v.timer_enabled && !v.geo_enabled
                     ).map(vault => (
                         <div key={vault.id} className="glass-panel" style={{ gridColumn: "span 12", marginBottom: "1rem" }}>
 
@@ -381,6 +456,20 @@ export default function Retrieve() {
                                                 Time-Locked
                                             </span>
                                         )}
+                                        {vault.geo_enabled && (
+                                            <span style={{
+                                                fontSize: '0.65rem', fontWeight: '700',
+                                                padding: '0.2rem 0.6rem',
+                                                background: 'rgba(50,173,230,0.1)',
+                                                border: '1px solid rgba(50,173,230,0.3)',
+                                                borderRadius: '20px',
+                                                color: '#32ade6',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.5px'
+                                            }}>
+                                                Geo-Locked
+                                            </span>
+                                        )}
                                         {vault.onChain && (
                                             <span style={{
                                                 fontSize: '0.65rem', fontWeight: '700',
@@ -398,9 +487,19 @@ export default function Retrieve() {
                                     </div>
                                 </div>
 
-                                <button className="btn" onClick={() => handleUnlockClick(vault)}>
-                                    {selectedVault === vault ? "Close" : "Unlock"}
-                                </button>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <button 
+                                        className="btn-outline" 
+                                        style={{ borderColor: 'rgba(255,59,48,0.5)', color: '#ff3b30' }} 
+                                        onClick={() => handleDelete(vault)} 
+                                        disabled={isDeleting || isRebuilding}
+                                    >
+                                        Deploy Purge
+                                    </button>
+                                    <button className="btn" onClick={() => handleUnlockClick(vault)}>
+                                        {selectedVault === vault ? "Close" : "Unlock"}
+                                    </button>
+                                </div>
                             </div>
 
                             {/* EXPANDED — Drag & Drop Zones */}
@@ -464,7 +563,11 @@ export default function Retrieve() {
                                         onClick={() => handleRebuild(vault)}
                                         disabled={isRebuilding || !keyFile || !manifestFile}
                                     >
-                                        {isRebuilding ? "Rebuilding..." : !keyFile || !manifestFile ? "Upload Manifest & Key to Continue" : "Reconstruct Vault"}
+                                        {isRebuilding 
+                                            ? (txStatus || "Rebuilding...") 
+                                            : !keyFile || !manifestFile 
+                                                ? "Upload Manifest & Key to Continue" 
+                                                : "Reconstruct Vault"}
                                     </button>
                                 </div>
                             )}

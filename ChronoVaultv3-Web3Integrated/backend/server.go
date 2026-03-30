@@ -31,6 +31,7 @@ func startServer() {
 	http.Handle("/", http.FileServer(http.Dir("public")))
 	http.HandleFunc("/upload", enableCORS(uploadHandler))
 	http.HandleFunc("/retrieve", enableCORS(retrieveHandler))
+	http.HandleFunc("/delete", enableCORS(deleteHandler))
 
 	fmt.Println("🌐 Web3 DSN Server started on http://localhost:8080")
 	err := http.ListenAndServe(":8080", nil)
@@ -221,4 +222,42 @@ rootHash := strings.TrimSpace(string(rootBytes))
 	w.Write(decryptedData)
 
 	fmt.Printf("[Web3 Retrieve] Success. Verified: %v\n", verified)
+}
+
+func deleteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	r.ParseMultipartForm(10 << 20)
+	manifestFile, _, err := r.FormFile("manifest_file")
+	if err != nil {
+		http.Error(w, "Missing manifest", http.StatusBadRequest)
+		return
+	}
+	defer manifestFile.Close()
+
+	manifestBytes, _ := io.ReadAll(manifestFile)
+	manifestData := string(manifestBytes)
+
+	fmt.Println("\n[Web3 Delete] Initializing Purge Sequence...")
+
+	// Process Manifest
+	rawLines := strings.Split(strings.TrimSpace(manifestData), "\n")
+	for _, line := range rawLines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Unpin each CID
+		err := UnpinFromIPFS(line)
+		if err != nil {
+			fmt.Printf("Failed to unpin %s: %v\n", line, err)
+		}
+	}
+	
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Shreds deleted from IPFS swarm"))
+	fmt.Println("[Web3 Delete] Purge Complete.")
 }
