@@ -9,6 +9,8 @@ import Navbar from './components/Navbar.jsx';
 import Footer from './components/Footer.jsx';
 import NotFound from './pages/NotFound.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import FacialRecognitionUnlock from './pages/FacialRecognitionUnlock.jsx';
+import EmotionalStateUnlock from './pages/EmotionalStateUnlock.jsx';
 import { Toaster } from '@/components/ui/sonner';
 import { BeamsBackground } from '@/components/ui/beams-background';
 import './App.css';
@@ -50,6 +52,16 @@ function App() {
               <Route path="/admin" element={
                 <ProtectedRoute adminOnly>
                   <Admin />
+                </ProtectedRoute>
+              } />
+              <Route path="/unlock/facial" element={
+                <ProtectedRoute>
+                  <FacialRecognitionUnlock />
+                </ProtectedRoute>
+              } />
+              <Route path="/unlock/emotional" element={
+                <ProtectedRoute>
+                  <EmotionalStateUnlock />
                 </ProtectedRoute>
               } />
               <Route path="*" element={<NotFound />} />

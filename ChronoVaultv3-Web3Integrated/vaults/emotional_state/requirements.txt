@@ -1,0 +1,16 @@
+# ============================================================================
+# ChronoVault — Emotional State Vault | Requirements
+# ============================================================================
+# All dependencies run on consumer-grade hardware (CPU inference supported).
+# The RoBERTa model (~500MB) is downloaded once from Hugging Face Hub
+# and cached locally at ~/.cache/huggingface/hub/
+# ============================================================================
+
+# --- Core ML Framework ---
+torch>=2.0.0
+
+# --- Hugging Face Transformers (RoBERTa model loading & tokenization) ---
+transformers>=4.36.0
+
+# --- Numerical Operations ---
+numpy>=1.24.0
