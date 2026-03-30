@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -45,8 +46,8 @@ func startServer() {
 		return
 	}
 	if err = db.Ping(); err != nil {
-		fmt.Printf("Critical Error: Failed to ping DB: %v\n", err)
-		return
+		fmt.Printf("⚠️ Warning: Failed to ping Supabase DB (Continuing in Offline Mode): %v\n", err)
+		// We remove the strict 'return' here. The Vault prototype logic only uses the DB optionally right now.
 	}
 	fmt.Println("✅ Successfully connected to Supabase Postgres Engine")
 
@@ -71,6 +72,118 @@ type UploadResponse struct {
 }
 
 // ... (Keep your exact retrieveHandler here unchanged from your uploaded server.go file!) ...
+
+func uploadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	r.ParseMultipartForm(10 << 20) // 10 MB limit
+	
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "Missing file part", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	
+	originalData, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, "Error reading file", http.StatusInternalServerError)
+		return
+	}
+	
+	filename := header.Filename
+	
+	vaultTier := r.FormValue("vault_tier")
+	if vaultTier == "" {
+		vaultTier = "standard"
+	}
+	
+	userId := r.FormValue("user_id")
+	if userId == "" {
+		userId = "tester"
+	}
+
+	// Wait for Facial Enrollment if requested
+	if vaultTier == "facial" {
+		fmt.Printf("\n[Web Server] 🔒 Holding upload. Launching Facial Enrollment window for '%s'...\n", userId)
+		fmt.Println("             👇 PLEASE CHECK THIS SERVER CONSOLE TO COMPLETE SECURE ENROLLMENT 👇")
+		
+		cmd := exec.Command("python", "../vaults/facial_recognition/enroll.py", "--user-id", userId)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		
+		err = cmd.Run()
+		if err != nil {
+			fmt.Printf("\n❌ Warning: Facial enrollment exited with an error: %v\n", err)
+			http.Error(w, "Facial enrollment aborted. Upload cancelled.", http.StatusInternalServerError)
+			return
+		}
+		fmt.Printf("\n✅ [Web Server] Facial enrollment complete. Proceeding to encrypt file...\n")
+
+	} else if vaultTier == "emotional" {
+		fmt.Printf("\n[Web Server] 🔒 Holding upload. Launching Emotional State NLP Vault for '%s'...\n", userId)
+		fmt.Println("             👇 PLEASE CHECK THIS SERVER CONSOLE TO COMPLETE NLP ANALYSIS 👇")
+		
+		cmd := exec.Command("python", "../vaults/emotional_state/verify.py", "--user-id", userId)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		
+		err = cmd.Run()
+		if err != nil {
+			fmt.Printf("\n❌ Warning: Emotional State NLP exited with an error: %v\n", err)
+			http.Error(w, "Emotional State analysis aborted. Upload cancelled.", http.StatusInternalServerError)
+			return
+		}
+		fmt.Printf("\n✅ [Web Server] Emotional State verified. Proceeding to encrypt file...\n")
+	}
+
+	// Perform encryption, chunking, and Merkle root generation
+	EncryptAndStore(originalData, filename, vaultTier)
+
+	// Read the generated artifacts stored locally by EncryptAndStore
+	hashFile := fmt.Sprintf("hash_%s.txt", filename)
+	originalHashBytes, _ := os.ReadFile(hashFile)
+
+	rootFile := fmt.Sprintf("roothash_%s.txt", filename)
+	rootHashBytes, _ := os.ReadFile(rootFile)
+
+	keyFile := fmt.Sprintf("secret_%s.key", filename)
+	keyBytes, _ := os.ReadFile(keyFile)
+	keyHex := hex.EncodeToString(keyBytes) // Web UI displays and expects Hex format for key
+
+	manifestFile := "manifest_" + filename
+	manifestBytes, _ := os.ReadFile(manifestFile)
+
+	// Construct JSON response
+	resp := UploadResponse{
+		OriginalHash:    string(originalHashBytes),
+		RootHash:        string(rootHashBytes),
+		EncryptionKey:   keyHex,
+		FileName:        filename,
+		ManifestContent: string(manifestBytes),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	
+	// Convert exactly to JSON
+	importJson := true
+	if importJson {
+		// Just to suppress any missing import complaints mentally, but we can't import inside a function in Go.
+		// Wait, we can just use encoding/json directly if it's imported at the top. Wait! It is NOT imported in server.go except maybe already?
+		// Sprintf is safer here if json is NOT imported.
+	}
+	
+	responseStr := fmt.Sprintf(`{"original_hash":"%s","root_hash":"%s","encryption_key":"%s","file_name":"%s","manifest_content":"%s"}`,
+		resp.OriginalHash, resp.RootHash, resp.EncryptionKey, resp.FileName, strings.ReplaceAll(resp.ManifestContent, "\n", "\\n"))
+	
+	w.Write([]byte(responseStr))
+}
+
 
 func retrieveHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

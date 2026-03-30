@@ -1,0 +1,34 @@
+﻿============================================================
+  SMOKE TEST: ChronoVault Facial Recognition Vault
+============================================================
+python : Traceback (most recent call last):
+At line:1 char:1
++ python smoke_test.py 2>&1 | Out-File -FilePath 
+smoke_test_output.txt  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Trac 
+   eback (most recent call last)::String) [], Re  
+  moteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+[1/7] Testing config...
+  File "C:\Users\ojhav\OneDrive\Desktop\Project Ex
+hibition\ChronoVault\ChronoVaultv4-Web25Integrated
+\vaults\facial_recognition\smoke_test.py", line 
+19, in <module>
+    device = get_device()
+  File "C:\Users\ojhav\OneDrive\Desktop\Project Ex
+hibition\ChronoVault\ChronoVaultv4-Web25Integrated
+\vaults\facial_recognition\.\config.py", line 
+100, in get_device
+    print("[Config] \U0001f7e1 No GPU detected ù 
+running on CPU (still performant)")
+  File "C:\Users\ojhav\AppData\Local\Programs\Pyth
+on\Python310\lib\encodings\cp1252.py", line 19, 
+in encode
+    return codecs.charmap_encode(input,self.errors
+,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode 
+character '\U0001f7e1' in position 9: character 
+maps to <undefined>

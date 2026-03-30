@@ -11,7 +11,7 @@ import (
 )
 
 // EncryptAndStore handles the encryption and shredding logic
-func EncryptAndStore(originalData []byte, filename string) {
+func EncryptAndStore(originalData []byte, filename string, vaultTier string) {
 	fmt.Println("--- PHASE 1: ENCRYPT & SHRED ---")
 
 	// 1. Hash Original Data (Identity)
@@ -61,8 +61,9 @@ func EncryptAndStore(originalData []byte, filename string) {
 	os.WriteFile(rootFile, []byte(rootNode.Hash), 0644)
 	fmt.Printf("[Enc] Merkle Root Hash saved: %s...\n", rootNode.Hash[:10])
 
-	// Save Manifest (Order of chunks)
+	// Save Manifest (Order of chunks + Vault Type metadata)
 	manifestContent := "# Filename: " + filename + "\n"
+	manifestContent += "# Vault Security Tier: " + vaultTier + "\n"
 	for _, h := range chunkHashes {
 		manifestContent += h + "\n"
 	}

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { ShieldAlert, Download, Clock, GlobeLock, Database, Trash2, Key, FileText, CheckCircle2, ChevronUp, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, Download, Clock, GlobeLock, Database, Trash2, Key, FileText, CheckCircle2, ChevronUp, AlertTriangle, ScanFace, BrainCircuit, RefreshCw } from 'lucide-react';
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 
@@ -26,6 +26,12 @@ export default function Retrieve() {
     const [filter, setFilter] = useState('all');
     const [purgeModal, setPurgeModal] = useState(null); // vault to purge, or null
     const [purgeText, setPurgeText] = useState("");
+
+    // AI Challenge States for active vault
+    const [activeBiometricStatus, setActiveBiometricStatus] = useState('idle');
+    const [activeBiometricPin, setActiveBiometricPin] = useState('');
+    const [activeEmotionalStatus, setActiveEmotionalStatus] = useState('idle');
+    const [activeEmotionalText, setActiveEmotionalText] = useState('');
 
     const manifestInputRef = useRef(null);
     const keyInputRef = useRef(null);
@@ -58,7 +64,7 @@ export default function Retrieve() {
             }
 
             const blockchainByRoot = new Map();
-            let blockchainQueryOk = false; // stays false if the RPC call throws
+            let blockchainQueryOk = false;
 
             try {
                 const contract = new ethers.Contract(CONTRACT_ADDRESS, [
@@ -84,19 +90,26 @@ export default function Retrieve() {
                 (dbVaults || []).forEach(db => {
                     seenRoots.add(db.root_hash);
                     const ts = new Date(db.created_at).getTime();
+                    
+                    // Reconstruct dynamic UI category based on features
+                    let cat = "Standard";
+                    if (db.facial_enabled && db.emotional_enabled) cat = "Full AI Suite";
+                    else if (db.facial_enabled) cat = "Biometric Lock";
+                    else if (db.emotional_enabled) cat = "NLP Lock";
+                    else if (db.geo_enabled) cat = "GeoLock";
+                    else if (db.timer_enabled) cat = "TimeLock";
+
                     allVaults.push({
                         id: "db_" + db.id, fileName: db.file_name,
-                        category: db.geo_enabled ? "GeoLock" : db.timer_enabled ? "TimeLock" : "Standard",
+                        category: cat,
                         originalHash: db.original_hash, rootHash: db.root_hash,
                         manifestCID: db.manifest_cid, date: new Date(ts).toLocaleString(),
                         timestamp: ts, timer_enabled: db.timer_enabled, unlock_time: db.unlock_time,
                         geo_enabled: db.geo_enabled, latitude: db.latitude, longitude: db.longitude,
+                        facial_enabled: db.facial_enabled || false,
+                        emotional_enabled: db.emotional_enabled || false,
                         blockchainTx: db.blockchain_tx || null,
-                        // onChain: the Supabase root_hash exists as a key in the
-                        // blockchain map, meaning on-chain rootHash === db root_hash.
                         onChain: blockchainByRoot.has(db.root_hash),
-                        // blockchainQueryOk lets handleUnlockClick distinguish
-                        // "tampered" from "RPC temporarily unavailable".
                         blockchainQueryOk,
                     });
                 });
@@ -118,12 +131,6 @@ export default function Retrieve() {
     };
 
     const handleUnlockClick = (vault) => {
-        // Blockchain integrity check.
-        // Only block when ALL three conditions are true:
-        //   1. This vault was registered on-chain (has a tx hash in Supabase).
-        //   2. The blockchain RPC call succeeded this session (network was reachable).
-        //   3. The root hash from Supabase is NOT found in the on-chain vault set.
-        // Condition 2 prevents a temporary RPC outage from locking every vault.
         if (vault.blockchainTx && vault.blockchainQueryOk && !vault.onChain) {
             toast.error("Integrity check failed: root hash in Supabase does not match the blockchain record. Access blocked.");
             return;
@@ -141,6 +148,12 @@ export default function Retrieve() {
         setSelectedVault(selectedVault?.id === vault.id ? null : vault);
         setKeyFile(null);
         setManifestFile(null);
+        
+        // Reset sub-locks on panel toggle
+        setActiveBiometricStatus('idle');
+        setActiveBiometricPin('');
+        setActiveEmotionalStatus('idle');
+        setActiveEmotionalText('');
     };
 
     const handleDelete = (vault) => {
@@ -182,7 +195,63 @@ export default function Retrieve() {
         finally { setIsDeleting(false); }
     };
 
+    // --- AI Verification Handlers ---
+    const handleBiometricVerify = async () => {
+        if (!activeBiometricPin) { toast.error("PIN Required."); return; }
+        setActiveBiometricStatus('processing');
+        toast.info("Initializing Local OpenCV Verification Check...");
+
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const response = await fetch('http://localhost:8080/api/trigger-facial-auth', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pin: activeBiometricPin })
+            });
+            
+            if (!response.ok) throw new Error(await response.text());
+            await response.json(); // Consuming vault unlocked JSON
+            setActiveBiometricStatus('success');
+            toast.success("Biometric verification passed.");
+        } catch (error) {
+            setActiveBiometricStatus('error');
+            toast.error("Facial Scan Failed", { description: error.message });
+        }
+    };
+
+    const handleEmotionalVerify = async () => {
+        if (!activeEmotionalText.trim()) { toast.error("NLP Text Required."); return; }
+        setActiveEmotionalStatus('processing');
+        toast.info("Initializing Native RoBERTa Verification...");
+
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const response = await fetch('http://localhost:8080/api/trigger-emotional-auth', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: activeEmotionalText })
+            });
+            
+            if (!response.ok) throw new Error(await response.text());
+            await response.json(); 
+            setActiveEmotionalStatus('success');
+            toast.success("Emotional Baseline verified.");
+        } catch (error) {
+            setActiveEmotionalStatus('error');
+            toast.error("NLP Validation Failed", { description: error.message });
+        }
+    };
+
+    // --- Core Decryption ---
     const handleRebuild = async (vault) => {
+        // Prevent bypassing AI locks dynamically
+        if (vault.facial_enabled && activeBiometricStatus !== 'success') {
+            toast.error("Biometric clearance required first."); return;
+        }
+        if (vault.emotional_enabled && activeEmotionalStatus !== 'success') {
+            toast.error("Cognitive clearance required first."); return;
+        }
+
         if (!keyFile || !manifestFile) { toast.error("Manifest and Key files required"); return; }
         if (profile.credits < DOWNLOAD_COST) { toast.error("Insufficient credits"); return; }
 
@@ -244,9 +313,10 @@ export default function Retrieve() {
 
     const filteredVaults = vaults.filter(v =>
         filter === 'all' ? true :
+        filter === 'ai-locked' ? (v.facial_enabled || v.emotional_enabled) :
         filter === 'time-locked' ? v.timer_enabled :
         filter === 'geo-locked' ? v.geo_enabled :
-        !v.timer_enabled && !v.geo_enabled
+        !v.timer_enabled && !v.geo_enabled && !v.facial_enabled && !v.emotional_enabled
     );
 
     const Badge = ({ children, className }) => (
@@ -261,7 +331,7 @@ export default function Retrieve() {
             <div className="mb-10">
                 <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-2">Access & Retrieve</h1>
                 <p className="text-muted-foreground text-sm sm:text-base mb-5">
-                    Select a vault and securely reconstruct your encrypted files.
+                    Select a vault and securely reconstruct your encrypted files. Advanced locks require local clearance.
                 </p>
                 
                 <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${
@@ -305,6 +375,7 @@ export default function Retrieve() {
                         {[
                             { id: 'all', label: 'All' },
                             { id: 'standard', label: 'Standard' },
+                            { id: 'ai-locked', label: 'AI Locked' },
                             { id: 'time-locked', label: 'Time-Locked' },
                             { id: 'geo-locked', label: 'Geo-Locked' }
                         ].map(f => (
@@ -336,8 +407,11 @@ export default function Retrieve() {
                                         <div>
                                             <h3 className="text-sm font-semibold flex items-center gap-2">
                                                 {vault.fileName}
+                                                <span className="text-[10px] px-1.5 py-0.5 rounded border border-border/50 text-muted-foreground bg-muted/10 font-normal">
+                                                    {vault.category}
+                                                </span>
                                             </h3>
-                                            <div className="flex flex-wrap gap-1.5 items-center mt-1.5">
+                                            <div className="flex flex-wrap gap-1.5 items-center mt-2">
                                                 <span className="text-[11px] text-muted-foreground">{vault.date}</span>
                                                 
                                                 {vault.timer_enabled && (
@@ -348,6 +422,11 @@ export default function Retrieve() {
                                                 {vault.geo_enabled && (
                                                     <Badge className="bg-indigo-500/8 text-indigo-400 border-indigo-500/20">
                                                         <GlobeLock className="w-2.5 h-2.5" /> Geo
+                                                    </Badge>
+                                                )}
+                                                {(vault.facial_enabled || vault.emotional_enabled) && (
+                                                    <Badge className="bg-blue-500/8 text-blue-400 border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]">
+                                                        <ShieldAlert className="w-2.5 h-2.5" /> Deep Verification
                                                     </Badge>
                                                 )}
                                                 {vault.onChain && (
@@ -371,24 +450,77 @@ export default function Retrieve() {
                                             <Button 
                                                 variant={selectedVault?.id === vault.id ? "secondary" : "default"}
                                                 size="sm"
-                                                className="h-8 text-xs"
+                                                className="h-8 text-xs font-semibold"
                                                 onClick={() => handleUnlockClick(vault)}
                                             >
                                                 {selectedVault?.id === vault.id ? (
-                                                    <><ChevronUp className="w-3.5 h-3.5 mr-1" /> Cancel</>
+                                                    <><ChevronUp className="w-3.5 h-3.5 mr-1" /> Close</>
                                                 ) : (
-                                                    <><Key className="w-3.5 h-3.5 mr-1" /> Unlock</>
+                                                    <><Key className="w-3.5 h-3.5 mr-1" /> Access</>
                                                 )}
                                             </Button>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Decrypt Panel */}
+                                {/* Deep Verification & Decrypt Panel */}
                                 {selectedVault?.id === vault.id && (
-                                    <div className="bg-muted/20 border-t border-border/25 p-4 animate-fade-in">
-                                        <div className="grid sm:grid-cols-2 gap-3">
-                                            {/* Manifest */}
+                                    <div className="bg-muted/10 border-t border-border/25 p-5 animate-fade-in space-y-5">
+                                        
+                                        {/* Dynamic AI Required Gates */}
+                                        {(vault.facial_enabled || vault.emotional_enabled) && (
+                                            <div className="space-y-3 border-b border-border/25 pb-5">
+                                                <h4 className="text-xs uppercase font-bold tracking-widest text-muted-foreground flex items-center gap-2 mb-3">
+                                                    <ShieldAlert className="w-4 h-4 text-primary/80"/> Local Security Bypass Required
+                                                </h4>
+                                                
+                                                {vault.facial_enabled && (
+                                                    <div className={`p-4 rounded-lg border transition-all ${activeBiometricStatus === 'success' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-blue-500/5 border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.05)]'}`}>
+                                                        {activeBiometricStatus === 'success' ? (
+                                                            <div className="text-emerald-400 text-xs font-bold flex items-center gap-2 tracking-wide"><CheckCircle2 className="w-4 h-4" /> FACIAL VERIFICATION CLEARED</div>
+                                                        ) : (
+                                                            <div className="flex flex-col sm:flex-row gap-4 items-center">
+                                                                <div className="w-full sm:flex-1 space-y-1">
+                                                                    <div className="flex items-center gap-2 font-bold text-blue-400 text-sm"><ScanFace className="w-4 h-4"/> Identity Verification</div>
+                                                                    <p className="text-[11px] text-muted-foreground">Enter original PIN and align correctly with local hardware stream.</p>
+                                                                </div>
+                                                                <div className="w-full sm:w-64 space-y-2">
+                                                                    <Input type="password" placeholder="Vault PIN" value={activeBiometricPin} onChange={e => setActiveBiometricPin(e.target.value)} className="h-9 text-xs font-mono bg-black/40 border-blue-500/30" disabled={activeBiometricStatus === 'processing'}/>
+                                                                    <Button size="sm" onClick={handleBiometricVerify} disabled={activeBiometricStatus==='processing'} className="w-full text-xs bg-blue-600 hover:bg-blue-500 text-white font-semibold">
+                                                                        {activeBiometricStatus === 'processing' ? <><RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin"/> SCANNING...</> : 'VERIFY LOCAL IDENTITY'}
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {vault.emotional_enabled && (
+                                                    <div className={`p-4 rounded-lg border transition-all ${activeEmotionalStatus === 'success' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-purple-500/5 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.05)]'}`}>
+                                                        {activeEmotionalStatus === 'success' ? (
+                                                            <div className="text-emerald-400 text-xs font-bold flex items-center gap-2 tracking-wide"><CheckCircle2 className="w-4 h-4" /> NLP BASELINE CLEARED</div>
+                                                        ) : (
+                                                            <div className="flex flex-col sm:flex-row gap-4">
+                                                                <div className="w-full sm:w-1/3 space-y-1">
+                                                                    <div className="flex items-center gap-2 font-bold text-purple-400 text-sm"><BrainCircuit className="w-4 h-4"/> NLP Baseline</div>
+                                                                    <p className="text-[11px] text-muted-foreground">Requires deep-learning cognitive contextual match to verify authorized psychological state.</p>
+                                                                    <span className="inline-block mt-2 text-[9px] font-bold bg-purple-600/30 border border-purple-500/40 text-purple-200 px-2 py-0.5 rounded">TARGET: JOY</span>
+                                                                </div>
+                                                                <div className="w-full sm:w-2/3 space-y-2">
+                                                                    <textarea placeholder="Provide original sentiment..." value={activeEmotionalText} onChange={e => setActiveEmotionalText(e.target.value)} className="w-full h-16 text-xs font-sans bg-black/40 border border-purple-500/30 rounded-md p-2 focus:ring-1 focus:ring-purple-400 placeholder:text-purple-300/30 text-purple-100 resize-none" disabled={activeEmotionalStatus === 'processing'}/>
+                                                                    <Button size="sm" onClick={handleEmotionalVerify} disabled={activeEmotionalStatus==='processing'} className="w-full text-xs bg-purple-600 hover:bg-purple-500 text-white font-semibold">
+                                                                        {activeEmotionalStatus === 'processing' ? <><RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin"/> ANALYZING TEXT...</> : 'RUN NLP ANALYSIS'}
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <div className="grid sm:grid-cols-2 gap-4">
+                                            {/* Manifest Drop */}
                                             <div
                                                 className={`border-2 border-dashed rounded-lg p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
                                                     manifestFile ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-border/25 hover:border-primary/30 hover:bg-muted/30'
@@ -400,14 +532,14 @@ export default function Retrieve() {
                                                 <input type="file" className="hidden" ref={manifestInputRef} onChange={(e) => setManifestFile(e.target.files[0])} />
                                                 <FileText className={`w-6 h-6 mb-1.5 ${manifestFile ? 'text-emerald-500' : 'text-muted-foreground/50'}`} />
                                                 <h4 className={`text-xs font-semibold mb-0.5 ${manifestFile ? 'text-emerald-500' : 'text-foreground'}`}>
-                                                    {manifestFile ? manifestFile.name : "Manifest File"}
+                                                    {manifestFile ? manifestFile.name : "IPFS Manifest CID"}
                                                 </h4>
                                                 <p className="text-[11px] text-muted-foreground">
-                                                    {manifestFile ? `${(manifestFile.size / 1024).toFixed(2)} KB` : "Drop .txt"}
+                                                    {manifestFile ? `${(manifestFile.size / 1024).toFixed(2)} KB` : "Drop .txt map"}
                                                 </p>
                                             </div>
 
-                                            {/* Key */}
+                                            {/* Secret Key Drop */}
                                             <div
                                                 className={`border-2 border-dashed rounded-lg p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
                                                     keyFile ? 'border-amber-500/40 bg-amber-500/5' : 'border-border/25 hover:border-primary/30 hover:bg-muted/30'
@@ -419,25 +551,27 @@ export default function Retrieve() {
                                                 <input type="file" className="hidden" ref={keyInputRef} onChange={(e) => setKeyFile(e.target.files[0])} />
                                                 <Key className={`w-6 h-6 mb-1.5 ${keyFile ? 'text-amber-500' : 'text-muted-foreground/50'}`} />
                                                 <h4 className={`text-xs font-semibold mb-0.5 ${keyFile ? 'text-amber-500' : 'text-foreground'}`}>
-                                                    {keyFile ? keyFile.name : "Secret Key"}
+                                                    {keyFile ? keyFile.name : "Master Secret Key"}
                                                 </h4>
                                                 <p className="text-[11px] text-muted-foreground">
-                                                    {keyFile ? `${(keyFile.size / 1024).toFixed(2)} KB` : "Drop .key"}
+                                                    {keyFile ? `${(keyFile.size / 1024).toFixed(2)} KB` : "Drop .key string"}
                                                 </p>
                                             </div>
                                         </div>
 
-                                        <div className="mt-4">
+                                        <div className="mt-4 pt-2">
                                             <Button
-                                                className="w-full h-10 text-sm font-semibold"
+                                                className="w-full h-12 text-sm font-bold tracking-wider"
                                                 onClick={() => handleRebuild(vault)}
-                                                disabled={isRebuilding || !keyFile || !manifestFile}
+                                                disabled={isRebuilding || !keyFile || !manifestFile || (vault.facial_enabled && activeBiometricStatus !== 'success') || (vault.emotional_enabled && activeEmotionalStatus !== 'success')}
                                             >
                                                 {isRebuilding 
-                                                    ? (txStatus || "Rebuilding...") 
+                                                    ? (txStatus || "Rebuilding Hash Sequence...") 
                                                     : !keyFile || !manifestFile 
                                                         ? "Provide credentials to reconstruct" 
-                                                        : <span className="flex items-center gap-2"><Download className="w-4 h-4"/> Reconstruct & Download</span>}
+                                                        : (vault.facial_enabled && activeBiometricStatus !== 'success') || (vault.emotional_enabled && activeEmotionalStatus !== 'success')
+                                                        ? "AWAITING AI SECURITY CLEARANCE"
+                                                        : <span className="flex items-center gap-2"><Download className="w-5 h-5"/> ASSEMBLE & DECRYPT PAYLOAD</span>}
                                             </Button>
                                         </div>
                                     </div>
@@ -451,13 +585,7 @@ export default function Retrieve() {
             {/* Purge Confirmation Modal */}
             {purgeModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    {/* Backdrop */}
-                    <div
-                        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-                        onClick={closePurgeModal}
-                    />
-
-                    {/* Panel */}
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closePurgeModal} />
                     <div className="relative w-full max-w-md rounded-xl border border-destructive/30 bg-card shadow-2xl p-6 animate-fade-in">
                         <div className="flex items-start gap-4 mb-5">
                             <div className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full bg-destructive/10 border border-destructive/20">
@@ -466,9 +594,7 @@ export default function Retrieve() {
                             <div>
                                 <h2 className="text-base font-semibold text-foreground mb-1">Permanently Destroy Vault</h2>
                                 <p className="text-xs text-muted-foreground leading-relaxed">
-                                    This will unpin all IPFS shards for{' '}
-                                    <span className="font-mono text-foreground break-all">"{purgeModal.fileName}"</span>.
-                                    {' '}This action cannot be undone.
+                                    This will unpin all IPFS shards for <span className="font-mono text-foreground break-all">"{purgeModal.fileName}"</span>. This action cannot be undone.
                                 </p>
                             </div>
                         </div>
@@ -488,18 +614,8 @@ export default function Retrieve() {
                         </div>
 
                         <div className="flex gap-3">
-                            <Button
-                                variant="outline"
-                                className="flex-1"
-                                onClick={closePurgeModal}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-                                disabled={purgeText !== 'PURGE'}
-                                onClick={executePurge}
-                            >
+                            <Button variant="outline" className="flex-1" onClick={closePurgeModal}>Cancel</Button>
+                            <Button className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={purgeText !== 'PURGE'} onClick={executePurge}>
                                 <Trash2 className="w-4 h-4 mr-2" /> Confirm Purge
                             </Button>
                         </div>

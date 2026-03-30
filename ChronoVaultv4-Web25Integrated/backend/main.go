@@ -53,7 +53,7 @@ func runSimulation() {
 	Check(err)
 
 	// 3. Trigger Encryption Pipeline (defined in encrypt.go)
-	EncryptAndStore(originalData, inputFile)
+	EncryptAndStore(originalData, inputFile, "standard")
 
 	fmt.Println("\n------------------------------------------------")
 	fmt.Println("   (Network Simulation: Transferring files...)")

@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -500,6 +501,12 @@ func startServer() {
 	http.HandleFunc("/upload", protect(uploadHandler))
 	http.HandleFunc("/retrieve", protect(retrieveHandler))
 	http.HandleFunc("/delete", protect(deleteHandler))
+	http.HandleFunc("/api/trigger-facial-auth", protect(triggerFacialAuthHandler))
+	http.HandleFunc("/api/trigger-emotional-auth", protect(triggerEmotionalAuthHandler))
+	
+	// New Enrollment Endpoints
+	http.HandleFunc("/api/enroll-facial-auth", protect(enrollFacialAuthHandler))
+	http.HandleFunc("/api/enroll-emotional-auth", protect(enrollEmotionalAuthHandler))
 
 	fmt.Println("🌐 Web3 DSN Server started on http://localhost:8080")
 	server := &http.Server{
@@ -627,6 +634,229 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 	fmt.Printf("[Web3 Upload] Success. Merkle Root: %s\n", rootHash[:10])
 }
+
+// --- AI Vault Trigger Handlers ---
+
+func triggerFacialAuthHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var reqBody struct {
+		PIN string `json:"pin"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	userID := r.Header.Get("X-User-ID")
+	if userID == "" {
+		userID = "guest"
+	}
+
+	fmt.Printf("\n[Web3 AI Ops] 🔒 Launching Facial Recognition Protocol for user: %s\n", userID)
+	
+	cmd := exec.Command("python", "../vaults/facial_recognition/verify.py", "--user-id", userID)
+	cmd.Env = append(os.Environ(), "PYTHONIOENCODING=utf-8", "PYTHONUNBUFFERED=1")
+	
+	// Create pipe to securely send the PIN submitted from the React UI into the Python process
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to connect to AI process input")
+		return
+	}
+
+	var stdoutBuf strings.Builder
+	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to start AI process")
+		return
+	}
+
+	// Write the PIN identically as if the user typed it, then close to send EOF
+	go func() {
+		defer stdinPipe.Close()
+		io.WriteString(stdinPipe, reqBody.PIN+"\n")
+	}()
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Printf("\n❌ Facial Scan Process Exited: %v\n", err)
+		writeError(w, http.StatusInternalServerError, "Facial scan process interrupted or failed.")
+		return
+	}
+
+	outputStr := stdoutBuf.String()
+	
+	startIdx := strings.Index(outputStr, "{")
+	endIdx := strings.LastIndex(outputStr, "}")
+
+	if startIdx != -1 && endIdx != -1 && endIdx > startIdx {
+		jsonStr := outputStr[startIdx : endIdx+1]
+		var result map[string]interface{}
+		if err := json.Unmarshal([]byte(jsonStr), &result); err == nil {
+			if status, ok := result["status"].(string); ok && status == "VAULT_UNLOCKED" {
+				fmt.Println("\n✅ [Web3 AI Ops] Hardware verification success! Forwarding AES constraints to frontend.")
+				writeJSON(w, http.StatusOK, result)
+				return
+			}
+		}
+	}
+
+	writeError(w, http.StatusForbidden, "Biometric authentication failed or access denied.")
+}
+
+func triggerEmotionalAuthHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var reqBody struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	userID := r.Header.Get("X-User-ID")
+	if userID == "" {
+		userID = "guest"
+	}
+
+	fmt.Printf("\n[Web3 AI Ops] 🧠 Launching Emotional State Protocol for user: %s\n", userID)
+
+	cmd := exec.Command("python", "../vaults/emotional_state/verify.py", "--user-id", userID)
+	cmd.Env = append(os.Environ(), "PYTHONIOENCODING=utf-8", "PYTHONUNBUFFERED=1")
+	
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to connect to AI process input")
+		return
+	}
+
+	var stdoutBuf strings.Builder
+	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to start NLP process")
+		return
+	}
+
+	// Write the React text into the interactive python console buffer
+	go func() {
+		defer stdinPipe.Close()
+		io.WriteString(stdinPipe, reqBody.Text+"\n")
+	}()
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Printf("\n❌ Emotional NLP Process Exited: %v\n", err)
+		writeError(w, http.StatusInternalServerError, "NLP process interrupted or failed.")
+		return
+	}
+
+	outputStr := stdoutBuf.String()
+	startIdx := strings.Index(outputStr, "{")
+	endIdx := strings.LastIndex(outputStr, "}")
+
+	if startIdx != -1 && endIdx != -1 && endIdx > startIdx {
+		jsonStr := outputStr[startIdx : endIdx+1]
+		var result map[string]interface{}
+		if err := json.Unmarshal([]byte(jsonStr), &result); err == nil {
+			if status, ok := result["status"].(string); ok && status == "VAULT_UNLOCKED" {
+				fmt.Println("\n✅ [Web3 AI Ops] NLP Sentiment Check success! Forwarding state to frontend.")
+				writeJSON(w, http.StatusOK, result)
+				return
+			}
+		}
+	}
+
+	writeError(w, http.StatusForbidden, "Emotional state authentication failed or access denied.")
+}
+
+func enrollFacialAuthHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var reqBody struct {
+		PIN string `json:"pin"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	userID := r.Header.Get("X-User-ID")
+	if userID == "" { userID = "guest" }
+
+	fmt.Printf("\n[Web3 AI Ops] 📝 Launching Facial Enrollment Protocol for user: %s\n", userID)
+	
+	cmd := exec.Command("python", "../vaults/facial_recognition/enroll.py", "--user-id", userID)
+	cmd.Env = append(os.Environ(), "PYTHONIOENCODING=utf-8", "PYTHONUNBUFFERED=1")
+	
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to connect to AI process input")
+		return
+	}
+
+	var stdoutBuf strings.Builder
+	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to start AI process")
+		return
+	}
+
+	go func() { defer stdinPipe.Close(); io.WriteString(stdinPipe, reqBody.PIN+"\n"+reqBody.PIN+"\n") }()
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Printf("\n❌ Facial Enrollment Process Exited: %v\n", err)
+		writeError(w, http.StatusInternalServerError, "Facial enrollment process interrupted.")
+		return
+	}
+
+	outputStr := stdoutBuf.String()
+	startIdx := strings.Index(outputStr, "{")
+	endIdx := strings.LastIndex(outputStr, "}")
+
+	if startIdx != -1 && endIdx != -1 && endIdx > startIdx {
+		jsonStr := outputStr[startIdx : endIdx+1]
+		var result map[string]interface{}
+		if err := json.Unmarshal([]byte(jsonStr), &result); err == nil {
+			if status, ok := result["status"].(string); ok && status == "VAULT_ENROLLED" {
+				fmt.Println("\n✅ [Web3 AI Ops] Hardware enrollment success!")
+				writeJSON(w, http.StatusOK, result)
+				return
+			}
+		}
+	}
+	writeError(w, http.StatusForbidden, "Biometric enrollment failed.")
+}
+
+func enrollEmotionalAuthHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Emotional NLP models (RoBERTa) measure inference against a static target logic ("Joy"),
+	// not a localized user embedding file like FaceNet does. Thus, checking the box
+	// during Upload requires no hardware enrollment, just database tagging!
+	userID := r.Header.Get("X-User-ID")
+	fmt.Printf("\n✅ [Web3 AI Ops] NLP Sentiment Enrollment flagged active for user: %s\n", userID)
+	
+	writeJSON(w, http.StatusOK, map[string]string{"status": "VAULT_ENROLLED"})
+}
+
 
 func retrieveHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

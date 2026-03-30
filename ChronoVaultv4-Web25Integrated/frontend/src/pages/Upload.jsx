@@ -8,6 +8,8 @@ export default function Upload() {
     const [session, setSession] = useState(null);
     const fileInputRef = useRef(null);
 
+    const [vaultTier, setVaultTier] = useState('standard');
+
     // Fetch the logged-in user's session
     useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -33,6 +35,9 @@ export default function Upload() {
         
         // --- NEW: Pass the User ID to the Go Server ---
         formData.append('user_id', session.user.id);
+        
+        // --- NEW: Pass the selected Vault Tier ---
+        formData.append('vault_tier', vaultTier);
 
         try {
             const response = await fetch('http://localhost:8080/upload', { method: 'POST', body: formData });
@@ -78,7 +83,7 @@ export default function Upload() {
         downloadArtifacts(); 
     };
 
-    const handleNewUpload = () => { setArtifactData(null); setFile(null); };
+    const handleNewUpload = () => { setArtifactData(null); setFile(null); setVaultTier('standard'); };
 
     return (
         <>
@@ -126,6 +131,22 @@ export default function Upload() {
                                 <p style={{ marginBottom: '1rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '0.8rem', letterSpacing: '1px' }}>
                                     Ready for Encryption
                                 </p>
+                                
+                                <select 
+                                    value={vaultTier} 
+                                    onChange={(e) => setVaultTier(e.target.value)}
+                                    style={{
+                                        width: '100%', padding: '0.8rem', marginBottom: '1rem',
+                                        background: 'rgba(255,255,255,0.05)', color: '#fff',
+                                        border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px',
+                                        outline: 'none', cursor: 'pointer'
+                                    }}
+                                >
+                                    <option value="standard" style={{ color: '#000' }}>Standard Protocol (No AI)</option>
+                                    <option value="facial" style={{ color: '#000' }}>Biometric Level (Facial Scan)</option>
+                                    <option value="emotional" style={{ color: '#000' }}>Emotional State NLP Vault</option>
+                                </select>
+
                                 <button className="btn" style={{ width: '100%' }} onClick={handleUpload} disabled={!file || isUploading || !session}>
                                     {isUploading ? "Processing..." : "Initiate Protocol (₹40)"}
                                 </button>

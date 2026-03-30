@@ -24,6 +24,16 @@ lerna-debug.log*
 .env.local
 *.local
 
+# Biometric vault data — NEVER commit (encrypted embeddings, audit logs)
+vaults/*/data/*.vault
+vaults/*/data/audit.log
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+vaults/*/.venv/
+
 # OS junk
 .DS_Store
 

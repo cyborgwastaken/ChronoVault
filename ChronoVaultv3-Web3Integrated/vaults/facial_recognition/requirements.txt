@@ -1,0 +1,21 @@
+# ============================================================================
+# ChronoVault — Facial Recognition Vault | Requirements
+# ============================================================================
+# All dependencies run on consumer-grade hardware (CPU inference supported).
+# GPU acceleration is automatic if CUDA is available.
+# ============================================================================
+
+# --- Core ML Framework ---
+torch>=2.0.0
+
+# --- Face Detection (MTCNN) & Embedding (InceptionResnetV1 / FaceNet) ---
+facenet-pytorch>=2.5.3
+
+# --- Webcam Capture & Image Processing ---
+opencv-python>=4.8.0
+
+# --- Numerical Operations ---
+numpy>=1.24.0
+
+# --- Image Handling (required by facenet-pytorch internally) ---
+Pillow>=10.0.0
