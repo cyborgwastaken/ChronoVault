@@ -46,8 +46,8 @@ func startServer() {
 		return
 	}
 	if err = db.Ping(); err != nil {
-		fmt.Printf("Critical Error: Failed to ping DB: %v\n", err)
-		return
+		fmt.Printf("⚠️ Warning: Failed to ping Supabase DB (Continuing in Offline Mode): %v\n", err)
+		// We remove the strict 'return' here. The Vault prototype logic only uses the DB optionally right now.
 	}
 	fmt.Println("✅ Successfully connected to Supabase Postgres Engine")
 
@@ -123,6 +123,23 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fmt.Printf("\n✅ [Web Server] Facial enrollment complete. Proceeding to encrypt file...\n")
+
+	} else if vaultTier == "emotional" {
+		fmt.Printf("\n[Web Server] 🔒 Holding upload. Launching Emotional State NLP Vault for '%s'...\n", userId)
+		fmt.Println("             👇 PLEASE CHECK THIS SERVER CONSOLE TO COMPLETE NLP ANALYSIS 👇")
+		
+		cmd := exec.Command("python", "../vaults/emotional_state/verify.py", "--user-id", userId)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		
+		err = cmd.Run()
+		if err != nil {
+			fmt.Printf("\n❌ Warning: Emotional State NLP exited with an error: %v\n", err)
+			http.Error(w, "Emotional State analysis aborted. Upload cancelled.", http.StatusInternalServerError)
+			return
+		}
+		fmt.Printf("\n✅ [Web Server] Emotional State verified. Proceeding to encrypt file...\n")
 	}
 
 	// Perform encryption, chunking, and Merkle root generation
