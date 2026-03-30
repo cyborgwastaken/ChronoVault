@@ -1,171 +1,205 @@
-import { Link, useNavigate } from 'react-router-dom';
+import React from 'react';
+import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Lock, Clock, GlobeLock, ArrowRight } from 'lucide-react';
 
-export default function Home() {
-    const navigate = useNavigate();
+const fadeUp = {
+  hidden: { opacity: 0, y: 24 },
+  visible: (i = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.5, delay: i * 0.08, ease: [0.25, 0.46, 0.45, 0.94] },
+  }),
+};
 
-    return (
-        <>
-            {/* Hero Section */}
-            <div className="grid-container">
-                <header className="hero-title glass-panel" style={{ background: 'transparent', backdropFilter: 'none', gridColumn: 'span 8' }}>
-                    <h1>Secure.<br/>Digital.<br/><span style={{ color: 'rgba(255,255,255,0.2)' }}>Future.</span></h1>
-                </header>
-                
-                <div className="hero-meta glass-panel" style={{ gridColumn: 'span 4' }}>
-                    <div className="meta-label">01 — What is ChronoVault !?</div>
-                    <p>
-                        ChronoVault creates “vaults” of digital memories and assets, accessible only via specific triggers—time, biometrics, or real-life events. 
-                        Integrating blockchain for unmatched transparency, immutability, and user sovereignty.
+const features = [
+  {
+    icon: Lock,
+    title: 'Standard Vault',
+    desc: 'Files are shredded into AES-256 encrypted chunks and distributed across IPFS. Reassembly requires the precise decryption key and CID map.',
+    color: 'text-primary',
+    bg: 'bg-primary/8',
+  },
+  {
+    icon: Clock,
+    title: 'Time-Locked Vault',
+    desc: 'Set a strict unlock date. Not even you can access the file until the network time reaches the designated release window.',
+    color: 'text-amber-500',
+    bg: 'bg-amber-500/8',
+  },
+  {
+    icon: GlobeLock,
+    title: 'Geo-Locked Vault',
+    desc: 'Data unlocks only when the user is within a specific geographic boundary. Verified cryptographically via GPS coordinates.',
+    color: 'text-emerald-500',
+    bg: 'bg-emerald-500/8',
+  },
+];
+
+const stats = [
+  { value: 'AES-256', label: 'Client-Side Encryption' },
+  { value: 'IPFS', label: 'Decentralized Storage' },
+  { value: '0%', label: 'Data Loss History' },
+  { value: '100%', label: 'Open Verification' },
+];
+
+const Home = () => {
+  return (
+    <div className="flex flex-col">
+      {/* ─── Hero ─── */}
+      <section className="relative">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 pt-28 pb-32 text-center">
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={fadeUp}
+            custom={0}
+          >
+            <div className="inline-flex items-center gap-2 rounded-full border border-border/40 bg-muted/20 px-3 py-1 text-xs font-medium text-muted-foreground mb-6 backdrop-blur-sm">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+              Web3 Integrated Storage
+            </div>
+          </motion.div>
+
+          <motion.h1
+            initial="hidden"
+            animate="visible"
+            variants={fadeUp}
+            custom={1}
+            className="text-4xl sm:text-5xl md:text-7xl font-extrabold tracking-tight mb-6"
+          >
+            Secure. Verifiable.
+            <br />
+            <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 bg-clip-text text-transparent">
+              Future-Proof Storage.
+            </span>
+          </motion.h1>
+
+          <motion.p
+            initial="hidden"
+            animate="visible"
+            variants={fadeUp}
+            custom={2}
+            className="text-base sm:text-lg text-muted-foreground mb-10 max-w-xl mx-auto leading-relaxed"
+          >
+            Military-grade encryption meets decentralized Web3 infrastructure.
+            Lock your files with time or geo-location constraints.
+          </motion.p>
+
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={fadeUp}
+            custom={3}
+            className="flex flex-col sm:flex-row gap-3 justify-center"
+          >
+            <Link to="/upload">
+              <Button size="lg" className="w-full sm:w-auto gap-2 font-semibold h-11 px-6">
+                Start Vaulting
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+            <Link to="/retrieve">
+              <Button size="lg" variant="outline" className="w-full sm:w-auto h-11 px-6 border-border/40 backdrop-blur-sm">
+                Retrieve Files
+              </Button>
+            </Link>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ─── Features ─── */}
+      <section className="border-t border-border/30">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 py-20">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: '-80px' }}
+            variants={fadeUp}
+            className="text-center mb-14"
+          >
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-3">
+              Three Layers of Protection
+            </h2>
+            <p className="text-muted-foreground max-w-lg mx-auto text-sm sm:text-base">
+              Your data is only accessible exactly when, where, and to whom you decide.
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-3 gap-5">
+            {features.map((f, i) => (
+              <motion.div
+                key={f.title}
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: '-40px' }}
+                variants={fadeUp}
+                custom={i}
+                whileHover={{ y: -4 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+              >
+                <Card className="h-full bg-card/50 backdrop-blur-md border-border/30 hover:border-border/60 transition-colors">
+                  <CardHeader className="pb-3">
+                    <div className={`w-10 h-10 rounded-lg ${f.bg} flex items-center justify-center mb-3`}>
+                      <f.icon className={`h-5 w-5 ${f.color}`} />
+                    </div>
+                    <CardTitle className="text-base font-semibold">{f.title}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {f.desc}
                     </p>
-                    <div style={{ marginTop: '2rem' }}>
-                        <Link to="/upload" className="btn">Upload</Link>
-                        <Link to="/retrieve" className="btn btn-outline" style={{ marginLeft: '1rem' }}>Retrieve</Link>
-                        <button
-                            className="btn btn-outline"
-                            style={{ marginLeft: '1rem' }}
-                            onClick={() => navigate('/time-lock')}
-                        >
-                            Time Locked Vault
-                        </button>
-                        <button
-                            className="btn btn-outline"
-                            style={{ marginLeft: '1rem', marginTop: '1rem' }}
-                            onClick={() => navigate('/geo-lock')}
-                        >
-                            Geo Locked Vault
-                        </button>
-                    </div>
-                </div>
-            </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-            {/* Core Features Grid */}
-            <div className="grid-container">
-                <div className="glass-panel feature-large" style={{ gridColumn: 'span 6' }}>
-                    <div className="feature-icon" style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🔒</div>
-                    <div className="feature-content">
-                        <div className="meta-label">02 — Encryption</div>
-                        <h3>Passphrase Vault</h3>
-                        <p>Assets encrypted with a customizable secret word. Simple, effective, and completely private access.</p>
-                    </div>
-                </div>
-                <div className="glass-panel feature-large" style={{ gridColumn: 'span 6', borderRight: 'none' }}>
-                    <div className="feature-icon" style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🤝</div>
-                    <div className="feature-content">
-                        <div className="meta-label">03 — Consensus</div>
-                        <h3>Multi-Signature</h3>
-                        <p>Collaborative security requiring strict consensus (e.g., 3-of-5 approvals) before data release.</p>
-                    </div>
-                </div>
-                <div className="glass-panel feature-small" style={{ gridColumn: 'span 3' }}>
-                    <div className="feature-content">
-                        <div className="meta-label">04</div>
-                        <h3>AI Guardian</h3>
-                        <p>Emotional intelligence & gatekeeping.</p>
-                    </div>
-                </div>
-                <div className="glass-panel feature-small" style={{ gridColumn: 'span 3' }}>
-                    <div className="feature-content">
-                        <div className="meta-label">05</div>
-                        <h3>Geo-Lock</h3>
-                        <p>Physical location check (GPS).</p>
-                    </div>
-                </div>
-                <div className="glass-panel feature-small" style={{ gridColumn: 'span 3' }}>
-                    <div className="feature-content">
-                        <div className="meta-label">06</div>
-                        <h3>Biometric</h3>
-                        <p>FaceID, fingerprint, retina access.</p>
-                    </div>
-                </div>
-                <div className="glass-panel feature-small" style={{ gridColumn: 'span 3', borderRight: 'none' }}>
-                    <div className="feature-content">
-                        <div className="meta-label">07</div>
-                        <h3>Hardware</h3>
-                        <p>NFC/RFID Physical keys.</p>
-                    </div>
-                </div>
-            </div>
+      {/* ─── Stats / Trust ─── */}
+      <section className="border-t border-border/30">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 py-20">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: '-80px' }}
+            variants={fadeUp}
+            className="text-center mb-12"
+          >
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-3">
+              Zero-Knowledge Architecture
+            </h2>
+            <p className="text-sm sm:text-base text-muted-foreground max-w-lg mx-auto leading-relaxed">
+              We can't read your data even if we tried. All encryption happens
+              locally before anything leaves your device. Your keys stay yours.
+            </p>
+          </motion.div>
 
-            {/* Expanded Vault Index */}
-            <div className="grid-container">
-                <div className="section-header glass-panel" style={{ gridColumn: 'span 4' }}>
-                    <h2>Vault<br/>Index</h2>
-                    <p style={{ marginTop: '1rem' }}>Comprehensive architecture configurations for diverse deployment needs.</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {stats.map((s, i) => (
+              <motion.div
+                key={s.label}
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true }}
+                variants={fadeUp}
+                custom={i}
+                className="rounded-lg border border-border/30 bg-card/30 backdrop-blur-sm p-5 text-center"
+              >
+                <div className="text-xl sm:text-2xl font-bold text-foreground mb-1 font-mono">
+                  {s.value}
                 </div>
-                <div className="section-content" style={{ gridColumn: 'span 8', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
-                    <div className="list-item glass-panel">
-                        <div className="meta-label">Oracle Trigger</div>
-                        <h3>Life Event</h3>
-                        <p>Graduation, breakup, milestone.</p>
-                    </div>
-                    <div className="list-item glass-panel" style={{ borderRight: 'none' }}>
-                        <div className="meta-label">Sequential</div>
-                        <h3>Capsule Chain</h3>
-                        <p>Event-driven serial unlocking.</p>
-                    </div>
-                    <div className="list-item glass-panel" style={{ borderBottom: 'none' }}>
-                        <div className="meta-label">Ephemeral</div>
-                        <h3>Auto-Destruct</h3>
-                        <p>One-time access for confidentiality.</p>
-                    </div>
-                    <div className="list-item glass-panel" style={{ borderBottom: 'none', borderRight: 'none' }}>
-                        <div className="meta-label">Organization</div>
-                        <h3>Groups/Rooms</h3>
-                        <p>Thematic categorization.</p>
-                    </div>
-                </div>
-            </div>
+                <div className="text-xs text-muted-foreground">{s.label}</div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};
 
-            {/* Blockchain Integration */}
-            <div className="grid-container">
-                <div className="section-header glass-panel" style={{ gridColumn: 'span 4' }}>
-                    <h2>Chain<br/>Logic</h2>
-                    <p style={{ marginTop: '1rem' }}>Built on decentralized infrastructure.</p>
-                </div>
-                <div className="section-content" style={{ gridColumn: 'span 8', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
-                    <div className="list-item glass-panel">
-                        <h3>Immutability</h3>
-                        <p>Data hashes timestamped for permanent, auditable proof.</p>
-                    </div>
-                    <div className="list-item glass-panel" style={{ borderRight: 'none' }}>
-                        <h3>Smart Contracts</h3>
-                        <p>Automate unlock logic ensuring impartial enforcement.</p>
-                    </div>
-                    <div className="list-item glass-panel" style={{ borderBottom: 'none' }}>
-                        <h3>Oracles</h3>
-                        <p>Link real-world events directly to contract logic.</p>
-                    </div>
-                    <div className="list-item glass-panel" style={{ borderBottom: 'none', borderRight: 'none' }}>
-                        <h3>Sovereignty</h3>
-                        <p>Users retain full control of private encryption keys.</p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Use Cases */}
-            <div className="grid-container" style={{ borderBottom: 'none' }}>
-                <div className="section-header glass-panel" style={{ gridColumn: 'span 4', borderBottom: 'none' }}>
-                    <h2>Use<br/>Cases</h2>
-                </div>
-                <div className="section-content" style={{ gridColumn: 'span 8', display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: 'none' }}>
-                    <div className="list-item glass-panel">
-                        <h3>Students</h3>
-                        <p>“Open on graduation” advice capsules.</p>
-                    </div>
-                    <div className="list-item glass-panel" style={{ borderRight: 'none' }}>
-                        <h3>Families</h3>
-                        <p>Consensus-based inheritance and group vaults.</p>
-                    </div>
-                    <div className="list-item glass-panel" style={{ borderBottom: 'none' }}>
-                        <h3>Elderly</h3>
-                        <p>Legacy messages released after inactivity.</p>
-                    </div>
-                    <div className="list-item glass-panel" style={{ borderBottom: 'none', borderRight: 'none' }}>
-                        <h3>Relationships</h3>
-                        <p>Time capsules for anniversaries or milestones.</p>
-                    </div>
-                </div>
-            </div>
-        </>
-    );
-}
+export default Home;

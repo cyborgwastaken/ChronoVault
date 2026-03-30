@@ -3,61 +3,61 @@ import { AuthProvider } from './context/AuthContext';
 import Home from './pages/Home.jsx';
 import Upload from './pages/Upload.jsx';
 import Retrieve from './pages/Retrieve.jsx';
-import TimeLockUpload from './pages/TimeLockUpload.jsx';
-import GeoLockUpload from './pages/GeoLockUpload.jsx';
 import Login from './pages/Login.jsx';
 import Admin from './pages/Admin.jsx';
 import Navbar from './components/Navbar.jsx';
 import Footer from './components/Footer.jsx';
 import NotFound from './pages/NotFound.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
-import './index.css';
+import { Toaster } from '@/components/ui/sonner';
+import { BeamsBackground } from '@/components/ui/beams-background';
+import './App.css';
 
 function App() {
   return (
     <Router>
       <AuthProvider>
-        <div className="bg-gradient"></div>
+        <BeamsBackground intensity="subtle">
+          {/* Noise grain overlay for texture */}
+          <div className="noise-overlay" />
 
-        {/* Navbar stays constant across all pages */}
-        <Navbar />
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              className: 'font-sans',
+              style: {
+                fontFamily: '"DM Sans", system-ui, sans-serif',
+              },
+            }}
+          />
 
-        {/* Only the content inside Routes changes when you navigate */}
-        <div style={{ minHeight: '80vh' }}>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/upload" element={
-              <ProtectedRoute>
-                <Upload />
-              </ProtectedRoute>
-            } />
-            <Route path="/time-lock" element={
-              <ProtectedRoute>
-                <TimeLockUpload />
-              </ProtectedRoute>
-            } />
-            <Route path="/geo-lock" element={
-              <ProtectedRoute>
-                <GeoLockUpload />
-              </ProtectedRoute>
-            } />
-            <Route path="/retrieve" element={
-              <ProtectedRoute>
-                <Retrieve />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin" element={
-              <ProtectedRoute adminOnly>
-                <Admin />
-              </ProtectedRoute>
-            } />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </div>
+          <Navbar />
 
-        {/* Footer stays constant across all pages */}
-        <Footer />
+          <main className="flex-1">
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/upload" element={
+                <ProtectedRoute>
+                  <Upload />
+                </ProtectedRoute>
+              } />
+              <Route path="/retrieve" element={
+                <ProtectedRoute>
+                  <Retrieve />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin" element={
+                <ProtectedRoute adminOnly>
+                  <Admin />
+                </ProtectedRoute>
+              } />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </main>
+
+          <Footer />
+        </BeamsBackground>
       </AuthProvider>
     </Router>
   );

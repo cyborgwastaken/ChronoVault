@@ -1,46 +1,26 @@
+import { useAuth } from '../context/AuthContext'; 
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { useState, useEffect } from 'react';
+import { Loader2 } from 'lucide-react';
 
-export default function ProtectedRoute({ children, adminOnly = false }) {
-    const { user, profile, loading, isAdmin } = useAuth();
-    const [timedOut, setTimedOut] = useState(false);
+export default function ProtectedRoute({ children, adminOnly }) {
+    const { user, profile, loading } = useAuth();
 
-    // Safety timeout — never show "Authenticating..." for more than 5 seconds
-    useEffect(() => {
-        if (loading) {
-            const timer = setTimeout(() => setTimedOut(true), 5000);
-            return () => clearTimeout(timer);
-        }
-    }, [loading]);
-
-    if (loading && !timedOut) {
+    if (loading) {
         return (
-            <div className="grid-container" style={{ minHeight: '80vh' }}>
-                <div className="glass-panel" style={{
-                    gridColumn: 'span 12', display: 'flex', flexDirection: 'column',
-                    alignItems: 'center', justifyContent: 'center', padding: '6rem 2rem'
-                }}>
-                    <div style={{
-                        width: '40px', height: '40px',
-                        border: '3px solid rgba(255,255,255,0.1)',
-                        borderLeftColor: 'var(--accent)',
-                        borderRadius: '50%',
-                        animation: 'spin 1s linear infinite',
-                        marginBottom: '1rem'
-                    }} />
-                    <p className="meta-label">Authenticating...</p>
+            <div className="flex h-[80vh] w-full items-center justify-center">
+                <div className="flex flex-col items-center gap-4 text-muted-foreground">
+                    <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                    <p className="text-sm font-medium tracking-widest uppercase">Authorizing Session...</p>
                 </div>
             </div>
         );
     }
 
-    // If timed out or no user, redirect to login
     if (!user) {
         return <Navigate to="/login" replace />;
     }
 
-    if (adminOnly && !isAdmin) {
+    if (adminOnly && profile?.role !== 'admin') {
         return <Navigate to="/" replace />;
     }
 

@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import { supabase, authFetch } from '../lib/supabase';
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 
@@ -106,7 +106,7 @@ export default function GeoLockUpload() {
             const formData = new FormData();
             formData.append('file', file);
 
-            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/upload`, {
+            const response = await authFetch(`${import.meta.env.VITE_BACKEND_URL}/upload`, {
                 method: "POST",
                 body: formData
             });

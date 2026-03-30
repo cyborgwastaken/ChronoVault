@@ -1,103 +1,179 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import WalletButton from './WalletButton';
+import { ModeToggle } from './ModeToggle';
+import { Button } from '@/components/ui/button';
+import { Menu, X, LogOut } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
 
 export default function Navbar() {
     const location = useLocation();
     const { user, profile, signOut, isAdmin } = useAuth();
+    const [mobileOpen, setMobileOpen] = useState(false);
+    const [profileOpen, setProfileOpen] = useState(false);
+    const profileRef = useRef(null);
 
-    const allLinks = [
+    const navLinks = [
         { path: '/', label: 'Home' },
         { path: '/upload', label: 'Upload' },
-        { path: '/time-lock', label: 'Time Lock' },
-        { path: '/geo-lock', label: 'Geo Lock' },
         { path: '/retrieve', label: 'Retrieve' },
     ];
 
     if (isAdmin) {
-        allLinks.push({ path: '/admin', label: 'Admin' });
+        navLinks.push({ path: '/admin', label: 'Admin' });
     }
 
-    const visibleLinks = allLinks.filter(link => link.path !== location.pathname);
+    const isActive = (path) => location.pathname === path;
+
+    // Close profile dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (profileRef.current && !profileRef.current.contains(e.target)) {
+                setProfileOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Close profile dropdown on route change
+    useEffect(() => {
+        setProfileOpen(false);
+        setMobileOpen(false);
+    }, [location.pathname]);
 
     return (
-        <nav className="navbar">
-            <Link to="/" className="nav-brand" style={{ color: 'white', textDecoration: 'none' }}>
-                CHRONOVAULT®
-            </Link>
+        <nav className="sticky top-0 z-[100] w-full border-b border-border/20 bg-background/50 backdrop-blur-xl">
+            <div className="px-4 sm:px-8 h-16 flex items-center">
 
-            <div className="nav-links" style={{ display: 'flex', alignItems: 'center' }}>
-                {visibleLinks.map((link, i) => (
-                    <span key={link.path} style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
-                        {i > 0 && <span style={{ color: 'rgba(255,255,255,0.3)' }}>|</span>}
-                        <Link to={link.path} style={{ color: 'white', textDecoration: 'none' }}>
+                {/* Left: Logo + Nav Links */}
+                <div className="flex items-center gap-8">
+                    <Link to="/" className="flex items-center gap-1 flex-shrink-0">
+                        <span className="text-lg font-bold tracking-tight">CHRONO</span>
+                        <span className="text-lg font-bold tracking-tight text-gradient">VAULT</span>
+                    </Link>
+
+                    <div className="hidden md:flex items-center gap-1">
+                        {navLinks.map(link => (
+                            <Link
+                                key={link.path}
+                                to={link.path}
+                                className={`text-sm font-medium px-3.5 py-1.5 rounded-md transition-colors ${
+                                    isActive(link.path)
+                                        ? 'text-primary bg-primary/8'
+                                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'
+                                }`}
+                            >
+                                {link.label}
+                            </Link>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Spacer */}
+                <div className="flex-1" />
+
+                {/* Right: Actions */}
+                <div className="flex items-center gap-3">
+                    {user && profile && (
+                        <span className="hidden sm:inline text-xs font-medium text-muted-foreground">
+                            <span className={
+                                profile.credits <= 0 ? 'text-destructive font-mono' :
+                                profile.credits < 10 ? 'text-amber-500 font-mono' : 'text-primary font-mono'
+                            }>
+                                {profile.credits}
+                            </span>
+                            {' '}credits
+                        </span>
+                    )}
+
+                    <WalletButton />
+                    <ModeToggle />
+
+                    {user ? (
+                        <div className="relative" ref={profileRef}>
+                            <button
+                                onClick={() => setProfileOpen(!profileOpen)}
+                                className="flex items-center justify-center rounded-full transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                                {profile?.avatar_url ? (
+                                    <img
+                                        src={profile.avatar_url}
+                                        alt="Profile"
+                                        className="w-8 h-8 rounded-full border border-border/25 object-cover"
+                                    />
+                                ) : (
+                                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center border border-border/25">
+                                        {profile?.full_name?.[0] || profile?.email?.[0] || '?'}
+                                    </div>
+                                )}
+                            </button>
+
+                            {/* Profile dropdown */}
+                            {profileOpen && (
+                                <div className="absolute right-0 top-full mt-2 w-44 rounded-lg border border-border/25 bg-card/80 backdrop-blur-xl shadow-lg p-1.5 animate-fade-in">
+                                    <div className="px-3 py-2 border-b border-border/20 mb-1">
+                                        <p className="text-xs font-medium truncate">{profile?.full_name || 'User'}</p>
+                                        <p className="text-[11px] text-muted-foreground truncate">{profile?.email}</p>
+                                    </div>
+                                    <button
+                                        onClick={signOut}
+                                        className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/30 rounded-md transition-colors"
+                                    >
+                                        <LogOut className="w-3.5 h-3.5" />
+                                        Sign Out
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <Link to="/login">
+                            <Button size="sm" className="text-xs h-8">
+                                Sign In
+                            </Button>
+                        </Link>
+                    )}
+
+                    {/* Mobile menu button */}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="md:hidden h-8 w-8"
+                        onClick={() => setMobileOpen(!mobileOpen)}
+                    >
+                        {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+                    </Button>
+                </div>
+            </div>
+
+            {/* Mobile Nav */}
+            {mobileOpen && (
+                <div className="md:hidden border-t border-border/20 bg-background/60 backdrop-blur-xl px-4 py-3 space-y-1 animate-fade-in">
+                    {navLinks.map(link => (
+                        <Link
+                            key={link.path}
+                            to={link.path}
+                            onClick={() => setMobileOpen(false)}
+                            className={`block text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                                isActive(link.path)
+                                    ? 'text-primary bg-primary/8'
+                                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'
+                            }`}
+                        >
                             {link.label}
                         </Link>
-                    </span>
-                ))}
-
-                {user && profile && (
-                    <>
-                        <span style={{ color: 'rgba(255,255,255,0.3)' }}>|</span>
-
-                        {/* Credits Badge */}
-                        <div style={{
-                            display: 'flex', alignItems: 'center', gap: '0.5rem',
-                            padding: '0.35rem 0.8rem',
-                            background: 'rgba(255,255,255,0.05)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '20px',
-                            fontSize: '0.8rem', fontWeight: '700',
-                        }}>
-                            <span style={{
-                                color: profile.credits <= 0 ? 'var(--accent)' :
-                                    profile.credits < 10 ? '#ff9f0a' : '#32d74b'
-                            }}>
-                                ⬡ {profile.credits}
-                            </span>
-                            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>credits</span>
-                        </div>
-                    </>
-                )}
-
-                {/* Wallet Connect Button */}
-                <WalletButton />
-
-                {/* User Profile / Auth */}
-                {user ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
-                        {profile?.avatar_url && (
-                            <img
-                                src={profile.avatar_url}
-                                alt=""
-                                style={{
-                                    width: '32px', height: '32px', borderRadius: '50%',
-                                    border: '2px solid rgba(255,255,255,0.2)',
-                                    objectFit: 'cover'
-                                }}
-                            />
-                        )}
+                    ))}
+                    {user && (
                         <button
-                            onClick={signOut}
-                            className="btn-outline"
-                            style={{
-                                padding: '0.3rem 0.8rem', fontSize: '0.75rem',
-                                borderColor: 'rgba(255,59,48,0.4)',
-                                color: 'var(--accent)'
-                            }}
+                            onClick={() => { signOut(); setMobileOpen(false); }}
+                            className="flex items-center gap-2 w-full text-left text-sm font-medium px-3 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
                         >
+                            <LogOut className="w-3.5 h-3.5" />
                             Sign Out
                         </button>
-                    </div>
-                ) : (
-                    <Link to="/login" className="btn" style={{
-                        padding: '0.4rem 1rem', fontSize: '0.8rem',
-                        textDecoration: 'none'
-                    }}>
-                        Sign In
-                    </Link>
-                )}
-            </div>
+                    )}
+                </div>
+            )}
         </nav>
     );
 }

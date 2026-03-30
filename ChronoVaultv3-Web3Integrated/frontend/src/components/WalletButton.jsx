@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { ethers } from 'ethers';
+import { Button } from '@/components/ui/button';
+import { Wallet, Check } from 'lucide-react';
 
 export default function WalletButton() {
     const [walletAddress, setWalletAddress] = useState("");
 
-    // 1. Check if wallet is already connected when page loads
     useEffect(() => {
         checkConnection();
     }, []);
@@ -22,11 +22,9 @@ export default function WalletButton() {
         }
     };
 
-    // 2. Function to trigger connection
     const connectWallet = async () => {
         if (window.ethereum) {
             try {
-                // Request access to the user's wallet
                 const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
                 setWalletAddress(accounts[0]);
             } catch (err) {
@@ -38,29 +36,24 @@ export default function WalletButton() {
         }
     };
 
-    // Helper to shorten the address (e.g., 0x1234...5678)
-    const formatAddress = (addr) => {
-        return addr ? `${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}` : "";
-    };
-
     return (
-        <button 
-            className="btn-outline" 
+        <Button 
+            variant={walletAddress ? "ghost" : "outline"}
+            size="sm"
             onClick={connectWallet}
-            style={{ 
-                marginLeft: '1rem', 
-                borderColor: walletAddress ? '#32d74b' : 'var(--text-main)', 
-                color: walletAddress ? '#32d74b' : 'var(--text-main)',
-                display: 'flex', alignItems: 'center', gap: '0.5rem'
-            }}
+            className={`text-xs h-8 ${walletAddress ? 'text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 gap-1.5' : 'gap-2'}`}
         >
-            {/* Simple dot indicator */}
-            <div style={{ 
-                width: '8px', height: '8px', borderRadius: '50%', 
-                background: walletAddress ? '#32d74b' : 'rgba(255,255,255,0.3)' 
-            }} />
-            
-            {walletAddress ? formatAddress(walletAddress) : "Connect Wallet"}
-        </button>
+            {walletAddress ? (
+                <>
+                    <Check className="w-3.5 h-3.5" />
+                    Connected
+                </>
+            ) : (
+                <>
+                    <Wallet className="w-3.5 h-3.5" />
+                    Wallet
+                </>
+            )}
+        </Button>
     );
 }

@@ -1,46 +1,23 @@
+import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 
 export default function NotFound() {
     return (
-        <div className="grid-container" style={{ minHeight: '80vh' }}>
-            
-            {/* Left Panel - Stretches to bottom, text centered */}
-            <header 
-                className="hero-title glass-panel" 
-                style={{ 
-                    background: 'transparent', 
-                    backdropFilter: 'none', 
-                    gridColumn: 'span 8', 
-                    borderBottom: 'none', 
-                    justifyContent: 'center' // Vertically centers the 404 text
-                }}
-            >
-                <h1 style={{ fontSize: 'clamp(4rem, 12vw, 10rem)' }}>
-                    404.<br/>
-                    <span style={{ color: 'var(--accent)' }}>Lost.</span>
-                </h1>
-            </header>
-            
-            {/* Right Panel - Stretches to bottom, text centered */}
-            <div 
-                className="hero-instruction glass-panel" 
-                style={{ 
-                    gridColumn: 'span 4', 
-                    borderBottom: 'none', 
-                    justifyContent: 'center' // Vertically centers the instructions
-                }}
-            >
-                <div style={{ width: '100%' }}>
-                    <div className="meta-label">Error Code: 404</div>
-                    <p style={{ marginBottom: '2rem' }}>
-                        The vault coordinates you entered are invalid, or the artifact has been permanently shredded from the network.
-                    </p>
-                    <Link to="/" className="btn" style={{ width: '100%', textAlign: 'center', boxSizing: 'border-box' }}>
-                        Return to Safety
-                    </Link>
-                </div>
-            </div>
-            
+        <div className="flex flex-col items-center justify-center min-h-[70vh] text-center px-4 animate-fade-in">
+            <h1 className="text-8xl sm:text-9xl font-extrabold tracking-tighter text-primary/15 mb-2 select-none">
+                404
+            </h1>
+            <h2 className="text-2xl font-bold mb-2">Page Not Found</h2>
+            <p className="text-sm text-muted-foreground mb-8 max-w-sm leading-relaxed">
+                The vault or page you're looking for has been moved, encrypted, or doesn't exist on the network.
+            </p>
+            <Button asChild className="gap-2">
+                <Link to="/">
+                    <ArrowLeft className="h-4 w-4" />
+                    Return to Terminal
+                </Link>
+            </Button>
         </div>
     );
 }

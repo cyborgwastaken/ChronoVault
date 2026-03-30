@@ -1,7 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import { supabase, authFetch } from '../lib/supabase';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
+import { ShieldAlert, Download, Clock, GlobeLock, Database, Trash2, Key, FileText, CheckCircle2, ChevronUp, AlertTriangle } from 'lucide-react';
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 
@@ -18,25 +23,26 @@ export default function Retrieve() {
     const [isRebuilding, setIsRebuilding] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [txStatus, setTxStatus] = useState("");
-    const [restoreSuccess, setRestoreSuccess] = useState(null);
     const [filter, setFilter] = useState('all');
+    const [purgeModal, setPurgeModal] = useState(null); // vault to purge, or null
+    const [purgeText, setPurgeText] = useState("");
 
     const manifestInputRef = useRef(null);
     const keyInputRef = useRef(null);
 
     const DOWNLOAD_COST = 10;
 
-    useEffect(() => {
-        checkWalletAndFetch();
-    }, []);
+    useEffect(() => { checkWalletAndFetch(); }, []);
 
     const checkWalletAndFetch = async () => {
         if (window.ethereum) {
-            const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-            if (accounts.length > 0) {
-                setWalletConnected(true);
-                fetchVaults();
-            }
+            try {
+                const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                if (accounts.length > 0) {
+                    setWalletConnected(true);
+                    fetchVaults();
+                }
+            } catch (error) { console.error(error); }
         }
     };
 
@@ -51,531 +57,455 @@ export default function Retrieve() {
                 await linkWallet(walletAddress);
             }
 
-            // Fetch blockchain vaults
             const blockchainByRoot = new Map();
+            let blockchainQueryOk = false; // stays false if the RPC call throws
+
             try {
                 const contract = new ethers.Contract(CONTRACT_ADDRESS, [
                     "function getMyVaults() view returns (tuple(uint256 id,address owner,string fileName,string category,string originalHash,string rootHash,string manifestCID,uint256 timestamp,bool isActive)[])"
                 ], signer);
-
                 const data = await contract.getMyVaults();
-
                 data.filter(v => v.isActive).forEach(v => {
                     const ts = Number(v.timestamp) * 1000;
                     blockchainByRoot.set(v.rootHash, {
-                        id: v.id.toString(),
-                        fileName: v.fileName,
-                        category: v.category,
-                        originalHash: v.originalHash,
-                        rootHash: v.rootHash,
-                        manifestCID: v.manifestCID,
-                        date: new Date(ts).toLocaleString(),
-                        timestamp: ts,
-                        onChain: true
+                        id: v.id.toString(), fileName: v.fileName, category: v.category,
+                        originalHash: v.originalHash, rootHash: v.rootHash, manifestCID: v.manifestCID,
+                        date: new Date(ts).toLocaleString(), timestamp: ts, onChain: true
                     });
                 });
-            } catch (err) {}
+                blockchainQueryOk = true;
+            } catch (err) { console.error("Blockchain error:", err); }
 
-            // Fetch Supabase vaults and merge with blockchain data
             const allVaults = [];
             const seenRoots = new Set();
 
             if (profile?.id) {
-                const { data: dbVaults } = await supabase
-                    .from('vaults')
-                    .select('*')
-                    .eq('user_id', profile.id);
-
+                const { data: dbVaults } = await supabase.from('vaults').select('*').eq('user_id', profile.id);
                 (dbVaults || []).forEach(db => {
                     seenRoots.add(db.root_hash);
                     const ts = new Date(db.created_at).getTime();
                     allVaults.push({
-                        id: "db_" + db.id,
-                        fileName: db.file_name,
+                        id: "db_" + db.id, fileName: db.file_name,
                         category: db.geo_enabled ? "GeoLock" : db.timer_enabled ? "TimeLock" : "Standard",
-                        originalHash: db.original_hash,
-                        rootHash: db.root_hash,
-                        manifestCID: db.manifest_cid,
-                        date: new Date(ts).toLocaleString(),
-                        timestamp: ts,
-                        timer_enabled: db.timer_enabled,
-                        unlock_time: db.unlock_time,
-                        geo_enabled: db.geo_enabled,
-                        latitude: db.latitude,
-                        longitude: db.longitude,
-                        onChain: blockchainByRoot.has(db.root_hash)
+                        originalHash: db.original_hash, rootHash: db.root_hash,
+                        manifestCID: db.manifest_cid, date: new Date(ts).toLocaleString(),
+                        timestamp: ts, timer_enabled: db.timer_enabled, unlock_time: db.unlock_time,
+                        geo_enabled: db.geo_enabled, latitude: db.latitude, longitude: db.longitude,
+                        blockchainTx: db.blockchain_tx || null,
+                        // onChain: the Supabase root_hash exists as a key in the
+                        // blockchain map, meaning on-chain rootHash === db root_hash.
+                        onChain: blockchainByRoot.has(db.root_hash),
+                        // blockchainQueryOk lets handleUnlockClick distinguish
+                        // "tampered" from "RPC temporarily unavailable".
+                        blockchainQueryOk,
                     });
                 });
             }
 
             allVaults.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             setVaults(allVaults);
-
         } catch (error) {
-            console.error(error);
-        } finally {
-            setIsLoading(false);
-        }
+            toast.error("Error fetching vaults: " + error.message);
+        } finally { setIsLoading(false); }
     };
 
     const handleConnect = async () => {
-        await window.ethereum.request({ method: 'eth_requestAccounts' });
-        setWalletConnected(true);
-        fetchVaults();
+        try {
+            await window.ethereum.request({ method: 'eth_requestAccounts' });
+            setWalletConnected(true);
+            fetchVaults();
+        } catch (error) { toast.error("Wallet connection denied"); }
     };
 
     const handleUnlockClick = (vault) => {
+        // Blockchain integrity check.
+        // Only block when ALL three conditions are true:
+        //   1. This vault was registered on-chain (has a tx hash in Supabase).
+        //   2. The blockchain RPC call succeeded this session (network was reachable).
+        //   3. The root hash from Supabase is NOT found in the on-chain vault set.
+        // Condition 2 prevents a temporary RPC outage from locking every vault.
+        if (vault.blockchainTx && vault.blockchainQueryOk && !vault.onChain) {
+            toast.error("Integrity check failed: root hash in Supabase does not match the blockchain record. Access blocked.");
+            return;
+        }
+
         if (vault.timer_enabled) {
             const now = new Date();
             const unlockTime = new Date(vault.unlock_time);
-
             if (now < unlockTime) {
                 const seconds = Math.ceil((unlockTime - now) / 1000);
-                alert(`Vault locked. Try again in ${seconds}s`);
+                toast.error(`Vault locked. Try again in ${seconds}s`);
                 return;
             }
         }
-
-        setRestoreSuccess(null);
-        setSelectedVault(selectedVault === vault ? null : vault);
+        setSelectedVault(selectedVault?.id === vault.id ? null : vault);
         setKeyFile(null);
         setManifestFile(null);
     };
 
-    const handleDelete = async (vault) => {
-        if (!vault.manifestCID) {
-            alert("No manifest data found. Unable to purge shards from IPFS.");
-            return;
-        }
-        
-        const ok = window.confirm(`WARNING: Are you sure you want to permanently delete '${vault.fileName}'? This will destroy the shredded data from the IPFS network and remove the database record.`);
-        if (!ok) return;
+    const handleDelete = (vault) => {
+        if (!vault.manifestCID) { toast.error("No manifest data found."); return; }
+        setPurgeText("");
+        setPurgeModal(vault);
+        document.body.style.overflow = 'hidden';
+    };
 
+    const closePurgeModal = () => {
+        setPurgeModal(null);
+        document.body.style.overflow = '';
+    };
+
+    const executePurge = async () => {
+        const vault = purgeModal;
+        closePurgeModal();
         setIsDeleting(true);
         try {
             const formData = new FormData();
             const manifestBlob = new Blob([vault.manifestCID], { type: "text/plain" });
             formData.append("manifest_file", manifestBlob, "manifest.txt");
 
-            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/delete`, {
-                method: "POST",
-                body: formData
+            const response = await authFetch(`${import.meta.env.VITE_BACKEND_URL}/delete`, {
+                method: "POST", body: formData
             });
+            if (!response.ok) throw new Error(await response.text());
 
-            if (!response.ok) {
-                const errText = await response.text();
-                throw new Error(errText);
-            }
-
-            // Remove from Supabase
-            if (vault.id && vault.id.toString().startsWith("db_")) {
-                const dbId = vault.id.replace("db_", "");
-                await supabase.from('vaults').delete().eq('id', dbId);
+            if (vault.id?.toString().startsWith("db_")) {
+                await supabase.from('vaults').delete().eq('id', vault.id.replace("db_", ""));
             } else {
                 await supabase.from('vaults').delete().eq('root_hash', vault.rootHash);
             }
 
             setVaults(prev => prev.filter(v => v.id !== vault.id));
-            if (selectedVault === vault) setSelectedVault(null);
-            alert("Vault and its IPFS shards have been permanently destroyed.");
-        } catch (err) {
-            alert("Delete failed: " + err.message);
-        } finally {
-            setIsDeleting(false);
-        }
+            if (selectedVault?.id === vault.id) setSelectedVault(null);
+            toast.success("Vault and IPFS shards permanently destroyed.");
+        } catch (err) { toast.error("Delete failed: " + err.message); }
+        finally { setIsDeleting(false); }
     };
 
     const handleRebuild = async (vault) => {
-        if (!keyFile || !manifestFile) {
-            alert("Need manifest + key");
-            return;
-        }
-
-        if (profile.credits < DOWNLOAD_COST) {
-            alert("Not enough credits");
-            return;
-        }
+        if (!keyFile || !manifestFile) { toast.error("Manifest and Key files required"); return; }
+        if (profile.credits < DOWNLOAD_COST) { toast.error("Insufficient credits"); return; }
 
         setIsRebuilding(true);
-        setRestoreSuccess(null);
 
         if (vault.geo_enabled) {
-            setTxStatus("Verifying your physical location...");
+            setTxStatus("Verifying location...");
             const getLoc = () => new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej));
             try {
                 const pos = await getLoc();
-                const userLat = pos.coords.latitude;
-                const userLon = pos.coords.longitude;
-                
-                // Haversine formula
-                const p = 0.017453292519943295;
-                const c = Math.cos;
-                const a = 0.5 - c((userLat - vault.latitude) * p)/2 + 
-                        c(vault.latitude * p) * c(userLat * p) * 
-                        (1 - c((userLon - vault.longitude) * p))/2;
-                const distanceKm = 12742 * Math.asin(Math.sqrt(a));
-
-                if (distanceKm > 2) { // 2km radius
-                    alert(`Access Denied: You are not at the required location to unlock this vault. You are ${distanceKm.toFixed(2)} km away.`);
-                    setIsRebuilding(false);
-                    setTxStatus("");
-                    return;
+                const uLat = pos.coords.latitude, uLon = pos.coords.longitude;
+                const p = 0.017453292519943295, c = Math.cos;
+                const a = 0.5 - c((uLat - vault.latitude) * p)/2 + 
+                        c(vault.latitude * p) * c(uLat * p) * (1 - c((uLon - vault.longitude) * p))/2;
+                const distKm = 12742 * Math.asin(Math.sqrt(a));
+                if (distKm > 2) { 
+                    toast.error(`Access Denied: ${distKm.toFixed(2)} km away from unlock zone.`);
+                    setIsRebuilding(false); setTxStatus(""); return;
                 }
             } catch (err) {
-                alert("Failed to verify location. You must allow location access to unlock this Geo-Locked Vault.");
-                setIsRebuilding(false);
-                setTxStatus("");
-                return;
+                toast.error("Location verification failed.");
+                setIsRebuilding(false); setTxStatus(""); return;
             }
         }
 
         try {
-            setTxStatus("Reconstructing vault from nodes...");
+            setTxStatus("Reconstructing from nodes...");
             await deductCredits(DOWNLOAD_COST, 'download', `Download ${vault.fileName}`);
 
             const formData = new FormData();
             formData.append('key_file', keyFile);
             formData.append('manifest_file', manifestFile);
             formData.append('original_hash', vault.originalHash);
-
             const rootBlob = new Blob([vault.rootHash], { type: "text/plain" });
             formData.append("roothash_file", rootBlob, "roothash.txt");
 
-            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/retrieve`, {
-                method: "POST",
-                body: formData
+            const response = await authFetch(`${import.meta.env.VITE_BACKEND_URL}/retrieve`, {
+                method: "POST", body: formData
             });
-
-            if (!response.ok) {
-                const err = await response.text();
-                throw new Error(err);
-            }
+            if (!response.ok) throw new Error(await response.text());
 
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);
-
             const a = document.createElement("a");
-            a.href = url;
-            a.download = vault.fileName;
-            a.click();
-
+            a.href = url; a.download = vault.fileName; a.click();
             URL.revokeObjectURL(url);
 
-            setRestoreSuccess(vault.fileName);
+            toast.success(`Successfully restored ${vault.fileName}`);
             setSelectedVault(null);
-
-        } catch (err) {
-            alert(err.message);
-        } finally {
-            setIsRebuilding(false);
-            setTxStatus("");
-        }
+            await fetchVaults();
+        } catch (err) { toast.error(err.message); }
+        finally { setIsRebuilding(false); setTxStatus(""); }
     };
-
-    const dropZoneStyle = (hasFile) => ({
-        padding: '2rem 1.5rem',
-        border: '2px dashed',
-        borderColor: hasFile ? 'var(--success)' : 'rgba(255,255,255,0.15)',
-        background: hasFile ? 'rgba(50, 215, 75, 0.05)' : 'rgba(255,255,255,0.02)',
-        borderRadius: '6px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        cursor: 'pointer',
-        transition: 'all 0.3s ease',
-        textAlign: 'center',
-        minHeight: '120px',
-    });
 
     const handleDropFile = (e, setter) => {
         e.preventDefault();
         if (e.dataTransfer.files.length) setter(e.dataTransfer.files[0]);
     };
 
-    return (
-        <>
-            {/* HERO */}
-            <div className="grid-container">
-                <header className="hero-title glass-panel" style={{ background: 'transparent', backdropFilter: 'none' }}>
-                    <h1>Access.<br/>Rebuild.</h1>
-                </header>
+    const filteredVaults = vaults.filter(v =>
+        filter === 'all' ? true :
+        filter === 'time-locked' ? v.timer_enabled :
+        filter === 'geo-locked' ? v.geo_enabled :
+        !v.timer_enabled && !v.geo_enabled
+    );
 
-                <div className="hero-instruction glass-panel">
-                    <p>Select a vault and reconstruct your encrypted file.</p>
-                    {/* Credit Info */}
-                    <div style={{
-                        marginTop: '1rem', padding: '0.75rem',
-                        background: profile?.credits < DOWNLOAD_COST ? 'rgba(255,59,48,0.1)' : 'rgba(50,215,75,0.05)',
-                        border: `1px solid ${profile?.credits < DOWNLOAD_COST ? 'rgba(255,59,48,0.2)' : 'rgba(50,215,75,0.15)'}`,
-                        borderRadius: '6px'
-                    }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                Cost: <strong style={{ color: '#fff' }}>{DOWNLOAD_COST} credits</strong>
-                            </span>
-                            <span style={{
-                                fontSize: '0.8rem', fontWeight: '700',
-                                color: profile?.credits < DOWNLOAD_COST ? 'var(--accent)' : '#32d74b'
-                            }}>
-                                Balance: {profile?.credits || 0}
-                            </span>
-                        </div>
-                    </div>
+    const Badge = ({ children, className }) => (
+        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${className}`}>
+            {children}
+        </span>
+    );
+
+    return (
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 py-10 animate-fade-in">
+            {/* Header */}
+            <div className="mb-10">
+                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-2">Access & Retrieve</h1>
+                <p className="text-muted-foreground text-sm sm:text-base mb-5">
+                    Select a vault and securely reconstruct your encrypted files.
+                </p>
+                
+                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${
+                    profile?.credits < DOWNLOAD_COST 
+                        ? 'bg-destructive/8 border-destructive/20 text-destructive' 
+                        : 'bg-muted/30 border-border/25 text-muted-foreground'
+                }`}>
+                    {profile?.credits < DOWNLOAD_COST ? 'Insufficient credits — ' : ''}
+                    This operation costs <strong className="text-foreground font-mono ml-1">{DOWNLOAD_COST}</strong>&nbsp;credits
                 </div>
             </div>
 
-            {/* SUCCESS BANNER */}
-            {restoreSuccess && (
-                <div className="grid-container">
-                    <div className="glass-panel" style={{
-                        gridColumn: 'span 12',
-                        padding: '2rem',
-                        background: 'rgba(50, 215, 75, 0.08)',
-                        border: '1px solid rgba(50, 215, 75, 0.2)',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
-                    }}>
-                        <div>
-                            <h2 style={{ color: '#fff', margin: 0 }}>Restored Successfully</h2>
-                            <p style={{ color: 'var(--success)', fontWeight: 'bold', marginTop: '0.5rem' }}>
-                                ✓ {restoreSuccess} has been decrypted and downloaded.
-                            </p>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.3rem' }}>
-                                {DOWNLOAD_COST} credits deducted. Remaining balance: {profile?.credits || 0}
-                            </p>
-                        </div>
-                        <button
-                            className="btn btn-outline"
-                            style={{ padding: '0.5rem 1.5rem', fontSize: '0.8rem' }}
-                            onClick={() => setRestoreSuccess(null)}
-                        >
-                            Dismiss
-                        </button>
+            {!walletConnected ? (
+                <Card className="text-center py-16 bg-card/40 backdrop-blur-md border-border/25">
+                    <CardHeader>
+                        <ShieldAlert className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
+                        <CardTitle className="text-xl font-semibold">Wallet Required</CardTitle>
+                        <CardDescription className="text-sm mx-auto max-w-sm">
+                            Connect your Ethereum wallet to access and decrypt your vaults.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <Button size="lg" onClick={handleConnect} className="h-11">Connect Wallet</Button>
+                    </CardContent>
+                </Card>
+            ) : isLoading ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent mb-3" />
+                    <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Querying Nodes...</p>
+                </div>
+            ) : vaults.length === 0 ? (
+                <Card className="text-center py-20 bg-card/40 backdrop-blur-md border-border/25 border-dashed">
+                    <Database className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
+                    <CardTitle className="text-lg mb-1 text-muted-foreground">No vaults found</CardTitle>
+                    <CardDescription>You haven't uploaded any files yet.</CardDescription>
+                </Card>
+            ) : (
+                <div className="space-y-5">
+                    {/* Filters */}
+                    <div className="flex flex-wrap gap-1.5 items-center bg-muted/30 p-1.5 rounded-lg border border-border/25">
+                        {[
+                            { id: 'all', label: 'All' },
+                            { id: 'standard', label: 'Standard' },
+                            { id: 'time-locked', label: 'Time-Locked' },
+                            { id: 'geo-locked', label: 'Geo-Locked' }
+                        ].map(f => (
+                            <Button 
+                                key={f.id}
+                                variant={filter === f.id ? "default" : "ghost"}
+                                size="sm"
+                                onClick={() => setFilter(f.id)}
+                                className="rounded-md text-xs h-7 px-3"
+                            >
+                                {f.label}
+                            </Button>
+                        ))}
+                        <span className="ml-auto pr-2 text-[11px] text-muted-foreground font-medium">
+                            {filteredVaults.length} vault{filteredVaults.length !== 1 ? 's' : ''}
+                        </span>
+                    </div>
+
+                    {/* Vault List */}
+                    <div className="space-y-3">
+                        {filteredVaults.map(vault => (
+                            <Card key={vault.id} className={`overflow-hidden transition-all duration-200 ${
+                                selectedVault?.id === vault.id 
+                                    ? 'border-primary/40 bg-card' 
+                                    : 'hover:border-border bg-card/40 backdrop-blur-md border-border/25'
+                            }`}>
+                                <div className="p-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                        <div>
+                                            <h3 className="text-sm font-semibold flex items-center gap-2">
+                                                {vault.fileName}
+                                            </h3>
+                                            <div className="flex flex-wrap gap-1.5 items-center mt-1.5">
+                                                <span className="text-[11px] text-muted-foreground">{vault.date}</span>
+                                                
+                                                {vault.timer_enabled && (
+                                                    <Badge className="bg-amber-500/8 text-amber-500 border-amber-500/20">
+                                                        <Clock className="w-2.5 h-2.5" /> Time
+                                                    </Badge>
+                                                )}
+                                                {vault.geo_enabled && (
+                                                    <Badge className="bg-indigo-500/8 text-indigo-400 border-indigo-500/20">
+                                                        <GlobeLock className="w-2.5 h-2.5" /> Geo
+                                                    </Badge>
+                                                )}
+                                                {vault.onChain && (
+                                                    <Badge className="bg-emerald-500/8 text-emerald-500 border-emerald-500/20">
+                                                        <CheckCircle2 className="w-2.5 h-2.5" /> Chain
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex gap-2">
+                                            <Button 
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-destructive/70 hover:text-destructive hover:bg-destructive/8 h-8 px-2.5 text-xs"
+                                                onClick={() => handleDelete(vault)} 
+                                                disabled={isDeleting || isRebuilding}
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5 mr-1" /> Purge
+                                            </Button>
+                                            <Button 
+                                                variant={selectedVault?.id === vault.id ? "secondary" : "default"}
+                                                size="sm"
+                                                className="h-8 text-xs"
+                                                onClick={() => handleUnlockClick(vault)}
+                                            >
+                                                {selectedVault?.id === vault.id ? (
+                                                    <><ChevronUp className="w-3.5 h-3.5 mr-1" /> Cancel</>
+                                                ) : (
+                                                    <><Key className="w-3.5 h-3.5 mr-1" /> Unlock</>
+                                                )}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Decrypt Panel */}
+                                {selectedVault?.id === vault.id && (
+                                    <div className="bg-muted/20 border-t border-border/25 p-4 animate-fade-in">
+                                        <div className="grid sm:grid-cols-2 gap-3">
+                                            {/* Manifest */}
+                                            <div
+                                                className={`border-2 border-dashed rounded-lg p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
+                                                    manifestFile ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-border/25 hover:border-primary/30 hover:bg-muted/30'
+                                                }`}
+                                                onDragOver={(e) => e.preventDefault()}
+                                                onDrop={(e) => handleDropFile(e, setManifestFile)}
+                                                onClick={() => manifestInputRef.current?.click()}
+                                            >
+                                                <input type="file" className="hidden" ref={manifestInputRef} onChange={(e) => setManifestFile(e.target.files[0])} />
+                                                <FileText className={`w-6 h-6 mb-1.5 ${manifestFile ? 'text-emerald-500' : 'text-muted-foreground/50'}`} />
+                                                <h4 className={`text-xs font-semibold mb-0.5 ${manifestFile ? 'text-emerald-500' : 'text-foreground'}`}>
+                                                    {manifestFile ? manifestFile.name : "Manifest File"}
+                                                </h4>
+                                                <p className="text-[11px] text-muted-foreground">
+                                                    {manifestFile ? `${(manifestFile.size / 1024).toFixed(2)} KB` : "Drop .txt"}
+                                                </p>
+                                            </div>
+
+                                            {/* Key */}
+                                            <div
+                                                className={`border-2 border-dashed rounded-lg p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
+                                                    keyFile ? 'border-amber-500/40 bg-amber-500/5' : 'border-border/25 hover:border-primary/30 hover:bg-muted/30'
+                                                }`}
+                                                onDragOver={(e) => e.preventDefault()}
+                                                onDrop={(e) => handleDropFile(e, setKeyFile)}
+                                                onClick={() => keyInputRef.current?.click()}
+                                            >
+                                                <input type="file" className="hidden" ref={keyInputRef} onChange={(e) => setKeyFile(e.target.files[0])} />
+                                                <Key className={`w-6 h-6 mb-1.5 ${keyFile ? 'text-amber-500' : 'text-muted-foreground/50'}`} />
+                                                <h4 className={`text-xs font-semibold mb-0.5 ${keyFile ? 'text-amber-500' : 'text-foreground'}`}>
+                                                    {keyFile ? keyFile.name : "Secret Key"}
+                                                </h4>
+                                                <p className="text-[11px] text-muted-foreground">
+                                                    {keyFile ? `${(keyFile.size / 1024).toFixed(2)} KB` : "Drop .key"}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-4">
+                                            <Button
+                                                className="w-full h-10 text-sm font-semibold"
+                                                onClick={() => handleRebuild(vault)}
+                                                disabled={isRebuilding || !keyFile || !manifestFile}
+                                            >
+                                                {isRebuilding 
+                                                    ? (txStatus || "Rebuilding...") 
+                                                    : !keyFile || !manifestFile 
+                                                        ? "Provide credentials to reconstruct" 
+                                                        : <span className="flex items-center gap-2"><Download className="w-4 h-4"/> Reconstruct & Download</span>}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+                            </Card>
+                        ))}
                     </div>
                 </div>
             )}
 
-            {/* MAIN */}
-            <div className="grid-container">
+            {/* Purge Confirmation Modal */}
+            {purgeModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    {/* Backdrop */}
+                    <div
+                        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        onClick={closePurgeModal}
+                    />
 
-                {!walletConnected ? (
-                    <div className="glass-panel" style={{ gridColumn: "span 12", textAlign: "center", padding: '4rem 2rem' }}>
-                        <p style={{ marginBottom: '1rem', color: 'var(--text-muted)' }}>Connect your wallet to view your vaults</p>
-                        <button className="btn" onClick={handleConnect}>Connect Wallet</button>
-                    </div>
-                ) : isLoading ? (
-                    <div className="glass-panel" style={{
-                        gridColumn: "span 12",
-                        display: 'flex', flexDirection: 'column',
-                        alignItems: 'center', justifyContent: 'center', padding: '4rem 2rem'
-                    }}>
-                        <div style={{
-                            width: '40px', height: '40px',
-                            border: '3px solid rgba(255,255,255,0.1)',
-                            borderLeftColor: 'var(--accent)',
-                            borderRadius: '50%',
-                            animation: 'spin 1s linear infinite',
-                            marginBottom: '1rem'
-                        }} />
-                        <p className="meta-label">Loading Vaults...</p>
-                    </div>
-                ) : vaults.length === 0 ? (
-                    <div className="glass-panel" style={{ gridColumn: "span 12", textAlign: 'center', padding: '4rem 2rem' }}>
-                        <p style={{ color: 'var(--text-muted)' }}>No vaults found.</p>
-                    </div>
-                ) : (
-                    <>
-                    {/* FILTER BAR */}
-                    <div className="glass-panel" style={{
-                        gridColumn: 'span 12',
-                        display: 'flex',
-                        gap: '0.5rem',
-                        alignItems: 'center',
-                        padding: '1rem 1.5rem',
-                        marginBottom: '0.5rem'
-                    }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginRight: '0.5rem' }}>Filter:</span>
-                        {['all', 'standard', 'time-locked', 'geo-locked'].map(f => (
-                            <button
-                                key={f}
-                                onClick={() => setFilter(f)}
-                                style={{
-                                    padding: '0.4rem 1rem',
-                                    fontSize: '0.75rem',
-                                    fontWeight: '700',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.5px',
-                                    border: filter === f ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.08)',
-                                    borderRadius: '20px',
-                                    background: filter === f ? 'rgba(255,255,255,0.1)' : 'transparent',
-                                    color: filter === f ? '#fff' : 'var(--text-muted)',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s ease'
-                                }}
-                            >
-                                {f === 'all' ? 'All' : f === 'standard' ? 'Standard' : f === 'geo-locked' ? 'Geo-Locked' : 'Time-Locked'}
-                            </button>
-                        ))}
-                        <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                            {vaults.filter(v =>
-                                filter === 'all' ? true :
-                                filter === 'time-locked' ? v.timer_enabled :
-                                filter === 'geo-locked' ? v.geo_enabled :
-                                !v.timer_enabled && !v.geo_enabled
-                            ).length} vault{vaults.length !== 1 ? 's' : ''}
-                        </span>
-                    </div>
-
-                    {vaults.filter(v =>
-                        filter === 'all' ? true :
-                        filter === 'time-locked' ? v.timer_enabled :
-                        filter === 'geo-locked' ? v.geo_enabled :
-                        !v.timer_enabled && !v.geo_enabled
-                    ).map(vault => (
-                        <div key={vault.id} className="glass-panel" style={{ gridColumn: "span 12", marginBottom: "1rem" }}>
-
-                            {/* TOP ROW */}
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                <div>
-                                    <h3 style={{ margin: 0 }}>{vault.fileName}</h3>
-                                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginTop: '0.3rem' }}>
-                                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{vault.date}</span>
-                                        {vault.timer_enabled && (
-                                            <span style={{
-                                                fontSize: '0.65rem', fontWeight: '700',
-                                                padding: '0.2rem 0.6rem',
-                                                background: 'rgba(255,59,48,0.1)',
-                                                border: '1px solid rgba(255,59,48,0.25)',
-                                                borderRadius: '20px',
-                                                color: 'var(--accent)',
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.5px'
-                                            }}>
-                                                Time-Locked
-                                            </span>
-                                        )}
-                                        {vault.geo_enabled && (
-                                            <span style={{
-                                                fontSize: '0.65rem', fontWeight: '700',
-                                                padding: '0.2rem 0.6rem',
-                                                background: 'rgba(50,173,230,0.1)',
-                                                border: '1px solid rgba(50,173,230,0.3)',
-                                                borderRadius: '20px',
-                                                color: '#32ade6',
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.5px'
-                                            }}>
-                                                Geo-Locked
-                                            </span>
-                                        )}
-                                        {vault.onChain && (
-                                            <span style={{
-                                                fontSize: '0.65rem', fontWeight: '700',
-                                                padding: '0.2rem 0.6rem',
-                                                background: 'rgba(50,215,75,0.1)',
-                                                border: '1px solid rgba(50,215,75,0.2)',
-                                                borderRadius: '20px',
-                                                color: '#32d74b',
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.5px'
-                                            }}>
-                                                On-Chain ✓
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                    <button 
-                                        className="btn-outline" 
-                                        style={{ borderColor: 'rgba(255,59,48,0.5)', color: '#ff3b30' }} 
-                                        onClick={() => handleDelete(vault)} 
-                                        disabled={isDeleting || isRebuilding}
-                                    >
-                                        Deploy Purge
-                                    </button>
-                                    <button className="btn" onClick={() => handleUnlockClick(vault)}>
-                                        {selectedVault === vault ? "Close" : "Unlock"}
-                                    </button>
-                                </div>
+                    {/* Panel */}
+                    <div className="relative w-full max-w-md rounded-xl border border-destructive/30 bg-card shadow-2xl p-6 animate-fade-in">
+                        <div className="flex items-start gap-4 mb-5">
+                            <div className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full bg-destructive/10 border border-destructive/20">
+                                <AlertTriangle className="w-5 h-5 text-destructive" />
                             </div>
-
-                            {/* EXPANDED — Drag & Drop Zones */}
-                            {selectedVault === vault && (
-                                <div style={{ marginTop: "1.5rem" }}>
-                                    <div style={{
-                                        display: "grid",
-                                        gridTemplateColumns: "1fr 1fr",
-                                        gap: "1rem"
-                                    }}>
-                                        {/* MANIFEST DROP ZONE */}
-                                        <div
-                                            style={dropZoneStyle(manifestFile)}
-                                            onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--accent)'; }}
-                                            onDragLeave={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = manifestFile ? 'var(--success)' : 'rgba(255,255,255,0.15)'; }}
-                                            onDrop={(e) => handleDropFile(e, setManifestFile)}
-                                            onClick={() => manifestInputRef.current?.click()}
-                                        >
-                                            <input
-                                                type="file"
-                                                style={{ display: 'none' }}
-                                                ref={manifestInputRef}
-                                                onChange={(e) => setManifestFile(e.target.files[0])}
-                                            />
-                                            <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>📄</div>
-                                            <h4 style={{ margin: 0, color: manifestFile ? 'var(--success)' : '#fff', fontSize: '0.9rem' }}>
-                                                {manifestFile ? manifestFile.name : "Manifest File"}
-                                            </h4>
-                                            <p style={{ margin: 0, marginTop: '0.3rem', fontSize: '0.75rem', color: manifestFile ? 'var(--success)' : 'var(--text-muted)' }}>
-                                                {manifestFile ? `${(manifestFile.size / 1024).toFixed(2)} KB` : "Drag & drop or click to browse"}
-                                            </p>
-                                        </div>
-
-                                        {/* KEY DROP ZONE */}
-                                        <div
-                                            style={dropZoneStyle(keyFile)}
-                                            onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--accent)'; }}
-                                            onDragLeave={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = keyFile ? 'var(--success)' : 'rgba(255,255,255,0.15)'; }}
-                                            onDrop={(e) => handleDropFile(e, setKeyFile)}
-                                            onClick={() => keyInputRef.current?.click()}
-                                        >
-                                            <input
-                                                type="file"
-                                                style={{ display: 'none' }}
-                                                ref={keyInputRef}
-                                                onChange={(e) => setKeyFile(e.target.files[0])}
-                                            />
-                                            <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🔑</div>
-                                            <h4 style={{ margin: 0, color: keyFile ? 'var(--success)' : '#fff', fontSize: '0.9rem' }}>
-                                                {keyFile ? keyFile.name : "Secret Key File"}
-                                            </h4>
-                                            <p style={{ margin: 0, marginTop: '0.3rem', fontSize: '0.75rem', color: keyFile ? 'var(--success)' : 'var(--text-muted)' }}>
-                                                {keyFile ? `${(keyFile.size / 1024).toFixed(2)} KB` : "Drag & drop or click to browse"}
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <button
-                                        className="btn"
-                                        style={{ width: '100%', marginTop: '1rem' }}
-                                        onClick={() => handleRebuild(vault)}
-                                        disabled={isRebuilding || !keyFile || !manifestFile}
-                                    >
-                                        {isRebuilding 
-                                            ? (txStatus || "Rebuilding...") 
-                                            : !keyFile || !manifestFile 
-                                                ? "Upload Manifest & Key to Continue" 
-                                                : "Reconstruct Vault"}
-                                    </button>
-                                </div>
-                            )}
+                            <div>
+                                <h2 className="text-base font-semibold text-foreground mb-1">Permanently Destroy Vault</h2>
+                                <p className="text-xs text-muted-foreground leading-relaxed">
+                                    This will unpin all IPFS shards for{' '}
+                                    <span className="font-mono text-foreground break-all">"{purgeModal.fileName}"</span>.
+                                    {' '}This action cannot be undone.
+                                </p>
+                            </div>
                         </div>
-                    ))}
-                    </>
-                )}
-            </div>
-        </>
+
+                        <div className="space-y-2 mb-5">
+                            <label className="text-xs font-medium text-muted-foreground">
+                                Type <span className="font-mono font-bold text-destructive">PURGE</span> to confirm
+                            </label>
+                            <Input
+                                autoFocus
+                                value={purgeText}
+                                onChange={e => setPurgeText(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter' && purgeText === 'PURGE') executePurge(); }}
+                                placeholder="PURGE"
+                                className="font-mono border-destructive/30 focus-visible:ring-destructive/40"
+                            />
+                        </div>
+
+                        <div className="flex gap-3">
+                            <Button
+                                variant="outline"
+                                className="flex-1"
+                                onClick={closePurgeModal}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                disabled={purgeText !== 'PURGE'}
+                                onClick={executePurge}
+                            >
+                                <Trash2 className="w-4 h-4 mr-2" /> Confirm Purge
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }

@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
+import { Users, Coins, Database, ShieldAlert, Search } from 'lucide-react';
 
 export default function Admin() {
     const { profile } = useAuth();
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [grantAmount, setGrantAmount] = useState({});
-    const [grantMessage, setGrantMessage] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
     const [stats, setStats] = useState({ totalUsers: 0, totalCredits: 0, totalVaults: 0 });
 
@@ -20,76 +24,50 @@ export default function Admin() {
         setLoading(true);
         try {
             const { data, error } = await supabase
-                .from('users')
-                .select('*')
-                .order('created_at', { ascending: false });
-
+                .from('users').select('*').order('created_at', { ascending: false });
             if (error) throw error;
             setUsers(data || []);
-        } catch (err) {
-            console.error('Error fetching users:', err);
-        } finally {
-            setLoading(false);
-        }
+        } catch (err) { toast.error('Error fetching users: ' + err.message); }
+        finally { setLoading(false); }
     };
 
     const fetchStats = async () => {
         try {
             const { data: usersData } = await supabase.from('users').select('credits');
             const { count: vaultCount } = await supabase.from('vaults').select('*', { count: 'exact', head: true });
-
             setStats({
                 totalUsers: usersData?.length || 0,
                 totalCredits: usersData?.reduce((sum, u) => sum + (u.credits || 0), 0) || 0,
                 totalVaults: vaultCount || 0,
             });
-        } catch (err) {
-            console.error('Error fetching stats:', err);
-        }
+        } catch (err) { console.error('Error fetching stats:', err); }
     };
 
     const handleGrantCredits = async (userId) => {
         const amount = parseInt(grantAmount[userId]) || 0;
-        if (amount <= 0) return alert('Enter a valid credit amount');
-
+        if (amount <= 0) return toast.error('Enter a valid credit amount');
         try {
             const { data, error } = await supabase.rpc('admin_grant_credits', {
-                target_user_id: userId,
-                amount: amount,
-                grant_description: `Admin grant: ${amount} credits`,
+                target_user_id: userId, amount, grant_description: `Admin grant: ${amount} credits`,
             });
-
             if (error) throw error;
             if (!data.success) throw new Error(data.error);
-
-            setGrantMessage({ ...grantMessage, [userId]: `✓ Granted ${amount} credits` });
+            toast.success(`Granted ${amount} credits`);
             setGrantAmount({ ...grantAmount, [userId]: '' });
-            fetchUsers();
-            fetchStats();
-
-            setTimeout(() => setGrantMessage(prev => ({ ...prev, [userId]: '' })), 3000);
-        } catch (err) {
-            alert('Failed to grant credits: ' + err.message);
-        }
+            fetchUsers(); fetchStats();
+        } catch (err) { toast.error('Failed: ' + err.message); }
     };
 
     const handleToggleRole = async (userId, currentRole) => {
         const newRole = currentRole === 'admin' ? 'user' : 'admin';
-        if (userId === profile?.id) return alert("You can't change your own role");
-
-        if (!confirm(`Change this user's role to "${newRole}"?`)) return;
-
+        if (userId === profile?.id) return toast.error("Can't change your own role");
+        if (!confirm(`Change role to "${newRole}"?`)) return;
         try {
-            const { error } = await supabase
-                .from('users')
-                .update({ role: newRole })
-                .eq('id', userId);
-
+            const { error } = await supabase.from('users').update({ role: newRole }).eq('id', userId);
             if (error) throw error;
+            toast.success(`Role updated to ${newRole}`);
             fetchUsers();
-        } catch (err) {
-            alert('Failed to update role: ' + err.message);
-        }
+        } catch (err) { toast.error('Failed: ' + err.message); }
     };
 
     const filteredUsers = users.filter(u =>
@@ -98,200 +76,138 @@ export default function Admin() {
         u.wallet_address?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    const statCards = [
+        { label: 'Total Users', value: stats.totalUsers, icon: Users, color: '' },
+        { label: 'Credits in Circulation', value: stats.totalCredits, icon: Coins, color: 'text-amber-500' },
+        { label: 'Active Vaults', value: stats.totalVaults, icon: Database, color: 'text-emerald-500' },
+    ];
+
     return (
-        <>
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 animate-fade-in">
             {/* Header */}
-            <div className="grid-container">
-                <header className="hero-title glass-panel" style={{
-                    background: 'transparent', backdropFilter: 'none',
-                    gridColumn: 'span 8', padding: '4rem 2rem'
-                }}>
-                    <h1>Admin<br /><span style={{ color: 'rgba(255,255,255,0.2)' }}>Panel.</span></h1>
-                </header>
-                <div className="hero-instruction glass-panel" style={{ gridColumn: 'span 4' }}>
-                    <div className="meta-label">System Control</div>
-                    <p>Manage users, grant credits, and monitor the ChronoVault network. Only admin-role users can access this interface.</p>
+            <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-3">
+                <div>
+                    <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-1">System Admin</h1>
+                    <p className="text-sm text-muted-foreground">Manage users, grant credits, and monitor network telemetry.</p>
+                </div>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-destructive/8 text-destructive border border-destructive/20 text-xs font-semibold">
+                    <ShieldAlert className="w-3.5 h-3.5" /> Root Access
                 </div>
             </div>
 
-            {/* Stats Row */}
-            <div className="grid-container">
-                <div className="glass-panel" style={{ gridColumn: 'span 4', textAlign: 'center' }}>
-                    <div className="meta-label" style={{ fontSize: '0.7rem' }}>Total Users</div>
-                    <h2 style={{ fontSize: '2.5rem', marginTop: '0.5rem' }}>{stats.totalUsers}</h2>
-                </div>
-                <div className="glass-panel" style={{ gridColumn: 'span 4', textAlign: 'center' }}>
-                    <div className="meta-label" style={{ fontSize: '0.7rem' }}>Credits in Circulation</div>
-                    <h2 style={{ fontSize: '2.5rem', marginTop: '0.5rem' }}>{stats.totalCredits}</h2>
-                </div>
-                <div className="glass-panel" style={{ gridColumn: 'span 4', textAlign: 'center', borderRight: 'none' }}>
-                    <div className="meta-label" style={{ fontSize: '0.7rem' }}>Total Vaults</div>
-                    <h2 style={{ fontSize: '2.5rem', marginTop: '0.5rem' }}>{stats.totalVaults}</h2>
-                </div>
+            {/* Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                {statCards.map(s => (
+                    <Card key={s.label} className="bg-card/40 backdrop-blur-md border-border/25">
+                        <CardHeader className="flex flex-row items-center justify-between pb-1.5">
+                            <CardTitle className="text-xs font-medium text-muted-foreground">{s.label}</CardTitle>
+                            <s.icon className="w-4 h-4 text-muted-foreground/50" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className={`text-2xl font-bold font-mono ${s.color}`}>{s.value}</div>
+                        </CardContent>
+                    </Card>
+                ))}
             </div>
 
-            {/* Search Bar */}
-            <div className="grid-container">
-                <div className="glass-panel" style={{ gridColumn: 'span 12', padding: '1.5rem 2rem', borderRight: 'none' }}>
-                    <input
-                        type="text"
-                        placeholder="Search users by name, email, or wallet address..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        style={{
-                            width: '100%', padding: '0.8rem 1rem',
-                            background: 'rgba(255,255,255,0.05)',
-                            color: '#fff', border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '6px', outline: 'none',
-                            fontSize: '0.9rem', fontFamily: 'inherit'
-                        }}
-                    />
-                </div>
+            {/* Search */}
+            <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-border/25 bg-card/40 backdrop-blur-md mb-6">
+                <Search className="w-4 h-4 text-muted-foreground/50" />
+                <Input 
+                    placeholder="Search by name, email, or wallet..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="border-0 focus-visible:ring-0 shadow-none bg-transparent h-8 text-sm"
+                />
             </div>
 
             {/* Users Table */}
-            <div className="grid-container" style={{ borderBottom: 'none' }}>
-                <div style={{ gridColumn: 'span 12', overflow: 'auto' }}>
+            <Card className="bg-card/40 backdrop-blur-md border-border/25">
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">User Directory</CardTitle>
+                    <CardDescription className="text-xs">Manage roles and network balances</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
                     {loading ? (
-                        <div className="glass-panel" style={{
-                            display: 'flex', flexDirection: 'column',
-                            alignItems: 'center', justifyContent: 'center', padding: '4rem 2rem'
-                        }}>
-                            <div style={{
-                                width: '40px', height: '40px',
-                                border: '3px solid rgba(255,255,255,0.1)',
-                                borderLeftColor: 'var(--accent)',
-                                borderRadius: '50%',
-                                animation: 'spin 1s linear infinite',
-                                marginBottom: '1rem'
-                            }} />
-                            <p className="meta-label">Loading Users...</p>
+                        <div className="py-12 flex justify-center items-center gap-2 text-muted-foreground text-sm">
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-primary border-t-transparent" />
+                            Loading...
                         </div>
                     ) : filteredUsers.length === 0 ? (
-                        <div className="glass-panel" style={{
-                            textAlign: 'center', padding: '4rem 2rem', borderBottom: 'none'
-                        }}>
-                            <p style={{ color: 'var(--text-muted)' }}>No users found.</p>
-                        </div>
+                        <div className="py-12 text-center text-sm text-muted-foreground">No users found.</div>
                     ) : (
-                        filteredUsers.map((u, i) => (
-                            <div key={u.id} className="glass-panel" style={{
-                                display: 'grid',
-                                gridTemplateColumns: '60px 1.5fr 1fr 0.7fr 0.5fr 1.5fr',
-                                gap: '1.5rem', alignItems: 'center',
-                                borderBottom: i === filteredUsers.length - 1 ? 'none' : 'var(--glass-border)',
-                                borderRight: 'none', padding: '1.5rem 2rem'
-                            }}>
-                                {/* Avatar */}
-                                <div>
-                                    {u.avatar_url ? (
-                                        <img src={u.avatar_url} alt="" style={{
-                                            width: '45px', height: '45px', borderRadius: '50%',
-                                            border: '2px solid rgba(255,255,255,0.1)', objectFit: 'cover'
-                                        }} />
-                                    ) : (
-                                        <div style={{
-                                            width: '45px', height: '45px', borderRadius: '50%',
-                                            background: 'rgba(255,255,255,0.1)',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            fontSize: '1.2rem', fontWeight: '700'
-                                        }}>
-                                            {u.full_name?.[0] || u.email?.[0] || '?'}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Name + Email */}
-                                <div>
-                                    <div style={{ fontWeight: '700', fontSize: '0.95rem' }}>
-                                        {u.full_name || 'Unnamed'}
-                                    </div>
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                                        {u.email}
-                                    </div>
-                                    {u.wallet_address && (
-                                        <div style={{
-                                            fontSize: '0.7rem', color: 'var(--accent)',
-                                            marginTop: '0.2rem', fontFamily: 'monospace'
-                                        }}>
-                                            {u.wallet_address.substring(0, 6)}...{u.wallet_address.substring(u.wallet_address.length - 4)}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Joined */}
-                                <div>
-                                    <div className="meta-label" style={{ fontSize: '0.65rem', marginBottom: '0.2rem' }}>Joined</div>
-                                    <div style={{ fontSize: '0.85rem' }}>
-                                        {new Date(u.created_at).toLocaleDateString()}
-                                    </div>
-                                </div>
-
-                                {/* Credits */}
-                                <div style={{ textAlign: 'center' }}>
-                                    <div className="meta-label" style={{ fontSize: '0.65rem', marginBottom: '0.2rem' }}>Credits</div>
-                                    <div style={{
-                                        fontSize: '1.3rem', fontWeight: '800',
-                                        color: u.credits <= 0 ? 'var(--accent)' : u.credits < 10 ? '#ff9f0a' : '#32d74b'
-                                    }}>
-                                        {u.credits}
-                                    </div>
-                                </div>
-
-                                {/* Role Badge */}
-                                <div style={{ textAlign: 'center' }}>
-                                    <button
-                                        onClick={() => handleToggleRole(u.id, u.role)}
-                                        style={{
-                                            padding: '0.3rem 0.7rem',
-                                            background: u.role === 'admin'
-                                                ? 'rgba(255,59,48,0.15)'
-                                                : 'rgba(255,255,255,0.05)',
-                                            border: `1px solid ${u.role === 'admin' ? 'rgba(255,59,48,0.3)' : 'rgba(255,255,255,0.1)'}`,
-                                            borderRadius: '20px',
-                                            color: u.role === 'admin' ? 'var(--accent)' : 'var(--text-muted)',
-                                            fontSize: '0.7rem', fontWeight: '700',
-                                            textTransform: 'uppercase',
-                                            cursor: u.id === profile?.id ? 'not-allowed' : 'pointer',
-                                            letterSpacing: '0.5px'
-                                        }}
-                                    >
-                                        {u.role}
-                                    </button>
-                                </div>
-
-                                {/* Grant Credits */}
-                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                    <input
-                                        type="number"
-                                        placeholder="Credits"
-                                        value={grantAmount[u.id] || ''}
-                                        onChange={(e) => setGrantAmount({ ...grantAmount, [u.id]: e.target.value })}
-                                        style={{
-                                            width: '80px', padding: '0.4rem 0.6rem',
-                                            background: 'rgba(255,255,255,0.05)',
-                                            color: '#fff', border: '1px solid rgba(255,255,255,0.1)',
-                                            borderRadius: '4px', outline: 'none', fontSize: '0.85rem'
-                                        }}
-                                    />
-                                    <button
-                                        className="btn"
-                                        style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}
-                                        onClick={() => handleGrantCredits(u.id)}
-                                    >
-                                        Grant
-                                    </button>
-                                    {grantMessage[u.id] && (
-                                        <span style={{ fontSize: '0.75rem', color: '#32d74b', whiteSpace: 'nowrap' }}>
-                                            {grantMessage[u.id]}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        ))
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-border/25 bg-muted/20">
+                                        <th className="px-5 py-3 text-left text-[11px] font-medium text-muted-foreground uppercase tracking-wider">User</th>
+                                        <th className="px-5 py-3 text-left text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Joined</th>
+                                        <th className="px-5 py-3 text-left text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Role</th>
+                                        <th className="px-5 py-3 text-left text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Balance</th>
+                                        <th className="px-5 py-3 text-left text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredUsers.map((u) => (
+                                        <tr key={u.id} className="border-b border-border/30 hover:bg-muted/15 transition-colors">
+                                            <td className="px-5 py-3.5">
+                                                <div className="flex items-center gap-2.5">
+                                                    {u.avatar_url ? (
+                                                        <img src={u.avatar_url} alt="" className="w-8 h-8 rounded-full border border-border/25 object-cover" />
+                                                    ) : (
+                                                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">
+                                                            {u.full_name?.[0] || u.email?.[0] || '?'}
+                                                        </div>
+                                                    )}
+                                                    <div>
+                                                        <div className="font-medium text-sm">{u.full_name || 'Unnamed'}</div>
+                                                        <div className="text-[11px] text-muted-foreground">{u.email}</div>
+                                                        {u.wallet_address && (
+                                                            <div className="text-[10px] text-primary/70 font-mono mt-0.5">
+                                                                {u.wallet_address.substring(0,6)}...{u.wallet_address.substring(u.wallet_address.length - 4)}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-5 py-3.5 text-xs text-muted-foreground">
+                                                {new Date(u.created_at).toLocaleDateString()}
+                                            </td>
+                                            <td className="px-5 py-3.5">
+                                                <span 
+                                                    className={`px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-full border cursor-pointer transition-colors ${
+                                                        u.role === 'admin' 
+                                                            ? 'bg-destructive/8 text-destructive border-destructive/20 hover:bg-destructive/15' 
+                                                            : 'bg-primary/8 text-primary border-primary/20 hover:bg-primary/15'
+                                                    }`}
+                                                    onClick={() => handleToggleRole(u.id, u.role)}
+                                                >
+                                                    {u.role}
+                                                </span>
+                                            </td>
+                                            <td className="px-5 py-3.5 font-bold text-base font-mono">
+                                                {u.credits}
+                                            </td>
+                                            <td className="px-5 py-3.5">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Input 
+                                                        type="number" 
+                                                        className="w-16 h-7 text-xs" 
+                                                        placeholder="Amt"
+                                                        value={grantAmount[u.id] || ''}
+                                                        onChange={(e) => setGrantAmount({ ...grantAmount, [u.id]: e.target.value })}
+                                                    />
+                                                    <Button size="sm" className="h-7 text-xs px-2.5" onClick={() => handleGrantCredits(u.id)}>Grant</Button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     )}
-                </div>
-            </div>
-        </>
+                </CardContent>
+            </Card>
+        </div>
     );
 }
