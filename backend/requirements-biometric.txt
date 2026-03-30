@@ -1,0 +1,7 @@
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+facenet-pytorch==2.6.0
+torch==2.2.2
+torchvision==0.17.2
+numpy==1.26.4
+Pillow==10.2.0

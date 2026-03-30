@@ -1,0 +1,70 @@
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# =========================
+# Secrets / environment
+# =========================
+.env
+.env.*
+!.env.example
+*.local
+
+backend/.env
+frontend/.env
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# =========================
+# Node / frontend
+# =========================
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+dist-ssr/
+coverage/
+
+# =========================
+# Python / biometric service
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+.venv*/
+venv/
+
+# =========================
+# Go / backend
+# =========================
+backend/bin/
+backend/*.exe
+backend/chronovault
+backend/chronovault.exe
+
+# Runtime / storage (do NOT commit user data)
+backend/shredded_store/
