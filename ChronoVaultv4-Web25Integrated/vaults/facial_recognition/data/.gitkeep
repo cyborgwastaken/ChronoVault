@@ -1,0 +1,2 @@
+# This directory stores encrypted biometric embeddings locally.
+# Files here are gitignored and must NEVER be committed.
